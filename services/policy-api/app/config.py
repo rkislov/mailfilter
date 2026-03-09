@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     smtp_decision_timeout_ms: int = 1500
     scan_queue_name: str = "anispam:scan-jobs"
     clamav_config_dir: str = "/shared/clamav-config"
+    rbl_resolvers: str = "1.1.1.1,8.8.8.8"
+    rbl_dns_timeout_seconds: float = 3.0
+    rbl_dns_lifetime_seconds: float = 6.0
 
 
 settings = Settings()

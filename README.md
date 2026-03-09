@@ -45,6 +45,9 @@ NETWORK_SUBNET=172.30.0.0/24
 DNS_RESOLVER_1=192.168.1.1
 DNS_RESOLVER_2=1.1.1.1
 DNS_SEARCH_DOMAIN=mail.local
+RBL_RESOLVERS=1.1.1.1,8.8.8.8
+RBL_DNS_TIMEOUT_SECONDS=3
+RBL_DNS_LIFETIME_SECONDS=6
 ```
 
 Recommendations:
@@ -52,6 +55,8 @@ Recommendations:
 - `DNS_RESOLVER_1` should be your primary reachable recursive DNS server.
 - `DNS_RESOLVER_2` should be a backup resolver.
 - `DNS_SEARCH_DOMAIN` should match your internal search domain if you use one.
+- `RBL_RESOLVERS` lets AniSpam query DNSBL zones through explicit public resolvers instead of relying on the container default resolver chain.
+- `RBL_DNS_TIMEOUT_SECONDS` and `RBL_DNS_LIFETIME_SECONDS` control how long the RBL resolver waits before treating the lookup as unavailable.
 - RBL, DKIM, anti-phishing feeds, and ClamAV updates require working DNS resolution from inside containers.
 - If your corporate DNS does not provide recursion for external zones, deploy a local resolver such as `Unbound` and point AniSpam containers to it.
 

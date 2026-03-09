@@ -79,6 +79,12 @@ class KasperskyAdapter:
 
 
 class ThreatIntelAdapter:
+    def __init__(self) -> None:
+        self._resolver = dns.resolver.Resolver(configure=False)
+        self._resolver.nameservers = _rbl_nameservers()
+        self._resolver.timeout = settings.rbl_dns_timeout_seconds
+        self._resolver.lifetime = settings.rbl_dns_lifetime_seconds
+
     def check_rbl(self, client_ip: str | None, zones: list[str]) -> list[ProviderSignal]:
         if not client_ip:
             return []
@@ -87,7 +93,7 @@ class ThreatIntelAdapter:
         for zone in zones:
             lookup = f"{reversed_ip}.{zone}"
             try:
-                answers = dns.resolver.resolve(lookup, "A")
+                answers = self._resolver.resolve(lookup, "A")
                 for answer in answers:
                     signals.append(
                         ProviderSignal(
@@ -108,7 +114,10 @@ class ThreatIntelAdapter:
                         kind="rbl",
                         matched=False,
                         summary=f"Lookup error for {client_ip}",
-                        metadata={"error": str(exc)},
+                        metadata={
+                            "error": str(exc),
+                            "resolver_nameservers": ",".join(self._resolver.nameservers),
+                        },
                     )
                 )
         return signals
@@ -268,3 +277,8 @@ def _extract_dkim_domain(signature: str) -> str | None:
     if match:
         return match.group(1)
     return None
+
+
+def _rbl_nameservers() -> list[str]:
+    nameservers = [item.strip() for item in settings.rbl_resolvers.split(",") if item.strip()]
+    return nameservers or ["1.1.1.1", "8.8.8.8"]

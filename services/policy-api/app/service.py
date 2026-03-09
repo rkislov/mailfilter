@@ -332,8 +332,6 @@ async def evaluate_message(db: Session, request: MessageEvaluationRequest) -> Me
             if signal.matched:
                 score += signal.score
                 reasons.append(signal.summary)
-            elif signal.metadata.get("error"):
-                degraded = True
             signal_records.append(_to_signal_record(signal))
 
     if policy.enable_anti_phishing:
