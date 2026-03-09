@@ -1,6 +1,6 @@
 FROM nginx:1.27-alpine
 
-ARG WEB_UI_API_BASE=http://localhost:8080/api/v1
+ARG WEB_UI_API_BASE=/api/v1
 
 COPY services/web-ui/nginx.conf /etc/nginx/conf.d/default.conf
 COPY services/web-ui/*.html /usr/share/nginx/html/
