@@ -29,13 +29,116 @@
           </nav>
         </aside>
         <main class="px-4 py-6 sm:px-6 lg:px-8">
-          <section class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Интеграции</p>
-              <h2 class="mt-2 text-2xl font-semibold text-white">Подключенные провайдеры</h2>
-            </div>
-            <div id="providers-table" class="mt-6 grid gap-3"></div>
-          </section>
+          <div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <section class="space-y-6">
+              <section class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">RBL</p>
+                    <h2 class="mt-2 text-2xl font-semibold text-white">Ручная настройка RBL</h2>
+                    <p class="mt-3 max-w-2xl text-sm text-slate-400">
+                      Добавляйте DNSBL-зоны вручную. Для каждой записи укажите имя провайдера и зону, например
+                      `zen.spamhaus.org`.
+                    </p>
+                  </div>
+                  <button type="button" onclick="resetProviderForm('rbl')" class="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-emerald-400 hover:text-white">
+                    Очистить форму
+                  </button>
+                </div>
+                <form id="rbl-provider-form" class="mt-6 grid gap-4">
+                  <input type="hidden" name="provider_id" />
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <label class="grid gap-2 text-sm text-slate-300">
+                      <span>Имя провайдера</span>
+                      <input name="name" list="rbl-provider-name-options" required placeholder="spamhaus-zen" class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white outline-none transition focus:border-emerald-400" />
+                    </label>
+                    <label class="grid gap-2 text-sm text-slate-300">
+                      <span>RBL зона</span>
+                      <input name="zone" list="rbl-zone-options" required placeholder="zen.spamhaus.org" class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white outline-none transition focus:border-emerald-400" />
+                    </label>
+                  </div>
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Organization ID</span>
+                    <input name="organization_id" type="number" value="1" min="1" class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white outline-none transition focus:border-emerald-400" />
+                  </label>
+                  <label class="inline-flex items-center gap-3 text-sm text-slate-300">
+                    <input name="enabled" type="checkbox" checked class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-400" />
+                    <span>Провайдер активен</span>
+                  </label>
+                  <div class="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+                    Подсказки по RBL: <span id="rbl-suggestions"></span>
+                  </div>
+                  <div class="flex flex-wrap gap-3">
+                    <button type="submit" class="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Сохранить RBL</button>
+                    <span id="rbl-provider-status" class="self-center text-sm text-slate-400"></span>
+                  </div>
+                </form>
+                <datalist id="rbl-provider-name-options"></datalist>
+                <datalist id="rbl-zone-options"></datalist>
+                <div id="rbl-providers-table" class="mt-6 grid gap-3"></div>
+              </section>
+
+              <section class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Anti-Phishing</p>
+                    <h2 class="mt-2 text-2xl font-semibold text-white">Phishing-провайдеры</h2>
+                    <p class="mt-3 max-w-2xl text-sm text-slate-400">
+                      Для каждого провайдера можно задать сразу несколько доменов. Введите домены по одному на строку
+                      или через запятую.
+                    </p>
+                  </div>
+                  <button type="button" onclick="resetProviderForm('anti_phishing')" class="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-emerald-400 hover:text-white">
+                    Очистить форму
+                  </button>
+                </div>
+                <form id="phishing-provider-form" class="mt-6 grid gap-4">
+                  <input type="hidden" name="provider_id" />
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <label class="grid gap-2 text-sm text-slate-300">
+                      <span>Имя провайдера</span>
+                      <input name="name" list="phishing-provider-name-options" required placeholder="openphish-local" class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white outline-none transition focus:border-emerald-400" />
+                    </label>
+                    <label class="grid gap-2 text-sm text-slate-300">
+                      <span>Источник / URL</span>
+                      <input name="base_url" list="phishing-provider-url-options" placeholder="feed://local/openphish-local" class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white outline-none transition focus:border-emerald-400" />
+                    </label>
+                  </div>
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Organization ID</span>
+                    <input name="organization_id" type="number" value="1" min="1" class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white outline-none transition focus:border-emerald-400" />
+                  </label>
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Список доменов</span>
+                    <textarea name="blocked_domains" rows="6" required placeholder="login-payments.example&#10;secure-wallet.example&#10;update-auth.example" class="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-white outline-none transition focus:border-emerald-400"></textarea>
+                  </label>
+                  <label class="inline-flex items-center gap-3 text-sm text-slate-300">
+                    <input name="enabled" type="checkbox" checked class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-400" />
+                    <span>Провайдер активен</span>
+                  </label>
+                  <div class="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
+                    Подсказки по phishing feed: <span id="phishing-suggestions"></span>
+                  </div>
+                  <div class="flex flex-wrap gap-3">
+                    <button type="submit" class="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Сохранить phishing-провайдер</button>
+                    <span id="phishing-provider-status" class="self-center text-sm text-slate-400"></span>
+                  </div>
+                </form>
+                <datalist id="phishing-provider-name-options"></datalist>
+                <datalist id="phishing-provider-url-options"></datalist>
+                <div id="phishing-providers-table" class="mt-6 grid gap-3"></div>
+              </section>
+            </section>
+
+            <section class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Остальные интеграции</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">Системные провайдеры</h2>
+                <p class="mt-3 text-sm text-slate-400">ClamAV, AI runtime и другие подключенные сервисы отображаются здесь в режиме обзора.</p>
+              </div>
+              <div id="other-providers-table" class="mt-6 grid gap-3"></div>
+            </section>
+          </div>
         </main>
       </div>
     </div>

@@ -1,5 +1,30 @@
 const API_BASE = "__API_BASE__";
 
+const PROVIDER_HINTS = {
+  rbl: [
+    { name: "spamhaus-zen", zone: "zen.spamhaus.org", note: "универсальная DNSBL-зона" },
+    { name: "spamcop", zone: "bl.spamcop.net", note: "дополнительная публичная зона" },
+    { name: "barracuda", zone: "b.barracudacentral.org", note: "обычно требует регистрацию" },
+  ],
+  anti_phishing: [
+    {
+      name: "openphish-local",
+      base_url: "feed://local/openphish-local",
+      domains: ["login-payments.example", "secure-wallet.example", "auth-update.example"],
+    },
+    {
+      name: "phishtank-local",
+      base_url: "feed://local/phishtank-local",
+      domains: ["support-portal.example", "reset-access.example"],
+    },
+    {
+      name: "soc-feed",
+      base_url: "feed://local/soc-feed",
+      domains: ["mail-verify.example", "cabinet-security.example"],
+    },
+  ],
+};
+
 function byId(id) {
   return document.getElementById(id);
 }
@@ -23,6 +48,70 @@ function renderList(targetId, items, mapper, emptyText = "Пока нет дан
   root.innerHTML =
     items.map(mapper).join("") ||
     `<div class="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-5 text-sm text-slate-400">${emptyText}</div>`;
+}
+
+function renderProviderHints() {
+  const rblRoot = byId("rbl-suggestions");
+  if (rblRoot) {
+    rblRoot.innerHTML = PROVIDER_HINTS.rbl
+      .map((item) => `${item.name}: ${item.zone} (${item.note})`)
+      .join(" • ");
+  }
+
+  const phishingRoot = byId("phishing-suggestions");
+  if (phishingRoot) {
+    phishingRoot.innerHTML = PROVIDER_HINTS.anti_phishing
+      .map((item) => `${item.name}: ${item.domains.slice(0, 2).join(", ")}`)
+      .join(" • ");
+  }
+
+  const rblNames = byId("rbl-provider-name-options");
+  if (rblNames) {
+    rblNames.innerHTML = PROVIDER_HINTS.rbl.map((item) => `<option value="${item.name}"></option>`).join("");
+  }
+
+  const rblZones = byId("rbl-zone-options");
+  if (rblZones) {
+    rblZones.innerHTML = PROVIDER_HINTS.rbl.map((item) => `<option value="${item.zone}"></option>`).join("");
+  }
+
+  const phishingNames = byId("phishing-provider-name-options");
+  if (phishingNames) {
+    phishingNames.innerHTML = PROVIDER_HINTS.anti_phishing.map((item) => `<option value="${item.name}"></option>`).join("");
+  }
+
+  const phishingUrls = byId("phishing-provider-url-options");
+  if (phishingUrls) {
+    phishingUrls.innerHTML = PROVIDER_HINTS.anti_phishing.map((item) => `<option value="${item.base_url}"></option>`).join("");
+  }
+}
+
+function parseDomainList(rawValue) {
+  const unique = [];
+  rawValue
+    .split(/[\n,;]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .forEach((item) => {
+      if (!unique.includes(item)) {
+        unique.push(item);
+      }
+    });
+  return unique;
+}
+
+function setProviderFormStatus(kind, message, tone = "muted") {
+  const target = byId(kind === "rbl" ? "rbl-provider-status" : "phishing-provider-status");
+  if (!target) {
+    return;
+  }
+  target.textContent = message || "";
+  target.className =
+    tone === "error"
+      ? "self-center text-sm text-rose-300"
+      : tone === "success"
+        ? "self-center text-sm text-emerald-300"
+        : "self-center text-sm text-slate-400";
 }
 
 function setActiveNav() {
@@ -128,6 +217,33 @@ function renderListEntries(entries) {
   );
 }
 
+function renderProviderCard(provider, editable = false) {
+  const extra = getProviderExtra(provider);
+  return `
+    <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <strong class="text-base text-white">${provider.name}</strong>
+          <div class="mt-3 grid gap-1 text-sm text-slate-400">
+            <span>Активен: ${provider.enabled ? "да" : "нет"}</span>
+            <span>Источник: ${getProviderSource(provider)}</span>
+            ${extra ? `<span>${extra}</span>` : ""}
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="rounded-full border border-slate-700 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">${provider.kind}</span>
+          ${
+            editable
+              ? `<button class="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700" onclick="editProvider(${provider.id})">Изменить</button>
+                 <button class="rounded-xl bg-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/30" onclick="deleteProvider(${provider.id})">Удалить</button>`
+              : ""
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function getProviderSource(provider) {
   const settings = provider.settings || {};
 
@@ -170,7 +286,9 @@ function getProviderExtra(provider) {
   }
 
   if (provider.kind === "anti_phishing" && Array.isArray(settings.blocked_domains)) {
-    return `Доменов в feed: ${settings.blocked_domains.length}`;
+    const preview = settings.blocked_domains.slice(0, 3).join(", ");
+    const suffix = settings.blocked_domains.length > 3 ? ` и еще ${settings.blocked_domains.length - 3}` : "";
+    return `Доменов в feed: ${settings.blocked_domains.length}${preview ? ` | ${preview}${suffix}` : ""}`;
   }
 
   if (provider.kind === "ai" && settings.model) {
@@ -190,24 +308,19 @@ async function loadDashboard() {
 }
 
 async function loadProviders() {
-  const settings = await api("/settings");
+  const providers = await api("/providers");
+  const rblProviders = providers.filter((provider) => provider.kind === "rbl");
+  const phishingProviders = providers.filter((provider) => provider.kind === "anti_phishing");
+  const otherProviders = providers.filter((provider) => !["rbl", "anti_phishing"].includes(provider.kind));
+
+  renderList("rbl-providers-table", rblProviders, (provider) => renderProviderCard(provider, true), "RBL-провайдеры пока не настроены.");
   renderList(
-    "providers-table",
-    settings.providers,
-    (provider) => `
-      <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <strong class="text-base text-white">${provider.name}</strong>
-          <span class="rounded-full border border-slate-700 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">${provider.kind}</span>
-        </div>
-        <div class="mt-3 grid gap-1 text-sm text-slate-400">
-          <span>Активен: ${provider.enabled ? "да" : "нет"}</span>
-          <span>Источник: ${getProviderSource(provider)}</span>
-          ${getProviderExtra(provider) ? `<span>${getProviderExtra(provider)}</span>` : ""}
-        </div>
-      </div>
-    `
+    "phishing-providers-table",
+    phishingProviders,
+    (provider) => renderProviderCard(provider, true),
+    "Phishing-провайдеры пока не настроены."
   );
+  renderList("other-providers-table", otherProviders, (provider) => renderProviderCard(provider), "Других провайдеров пока нет.");
 }
 
 async function loadMessages() {
@@ -275,6 +388,117 @@ async function loadAiRuntime() {
 async function loadLists() {
   const entries = await api("/lists");
   renderListEntries(entries);
+}
+
+function resetProviderForm(kind) {
+  const form = byId(kind === "rbl" ? "rbl-provider-form" : "phishing-provider-form");
+  if (!form) {
+    return;
+  }
+  form.reset();
+  form.provider_id.value = "";
+  form.organization_id.value = "1";
+  form.enabled.checked = true;
+  setProviderFormStatus(kind, "");
+}
+
+function populateProviderForm(provider) {
+  if (provider.kind === "rbl") {
+    const form = byId("rbl-provider-form");
+    if (!form) {
+      return;
+    }
+    form.provider_id.value = provider.id;
+    form.organization_id.value = provider.organization_id || 1;
+    form.name.value = provider.name || "";
+    form.zone.value = provider.settings?.zone || "";
+    form.enabled.checked = !!provider.enabled;
+    setProviderFormStatus("rbl", `Редактируется провайдер #${provider.id}`, "success");
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  if (provider.kind === "anti_phishing") {
+    const form = byId("phishing-provider-form");
+    if (!form) {
+      return;
+    }
+    form.provider_id.value = provider.id;
+    form.organization_id.value = provider.organization_id || 1;
+    form.name.value = provider.name || "";
+    form.base_url.value = provider.base_url || "";
+    form.blocked_domains.value = Array.isArray(provider.settings?.blocked_domains)
+      ? provider.settings.blocked_domains.join("\n")
+      : "";
+    form.enabled.checked = !!provider.enabled;
+    setProviderFormStatus("anti_phishing", `Редактируется провайдер #${provider.id}`, "success");
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+async function editProvider(id) {
+  const providers = await api("/providers");
+  const provider = providers.find((item) => item.id === id);
+  if (!provider) {
+    throw new Error("Провайдер не найден");
+  }
+  populateProviderForm(provider);
+}
+
+async function deleteProvider(id) {
+  await api(`/providers/${id}`, { method: "DELETE" });
+  await loadProviders();
+  setProviderFormStatus("rbl", "Провайдер удален.", "success");
+  setProviderFormStatus("anti_phishing", "Провайдер удален.", "success");
+}
+
+async function saveRblProvider(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const providerId = form.provider_id.value;
+  const payload = {
+    organization_id: Number(form.organization_id.value || 1),
+    name: form.name.value.trim(),
+    kind: "rbl",
+    enabled: form.enabled.checked,
+    settings: {
+      zone: form.zone.value.trim(),
+    },
+  };
+  await api(providerId ? `/providers/${providerId}` : "/providers", {
+    method: providerId ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  resetProviderForm("rbl");
+  setProviderFormStatus("rbl", providerId ? "RBL-провайдер обновлен." : "RBL-провайдер добавлен.", "success");
+  await loadProviders();
+}
+
+async function savePhishingProvider(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const providerId = form.provider_id.value;
+  const payload = {
+    organization_id: Number(form.organization_id.value || 1),
+    name: form.name.value.trim(),
+    kind: "anti_phishing",
+    enabled: form.enabled.checked,
+    base_url: form.base_url.value.trim() || null,
+    settings: {
+      blocked_domains: parseDomainList(form.blocked_domains.value),
+    },
+  };
+  await api(providerId ? `/providers/${providerId}` : "/providers", {
+    method: providerId ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  resetProviderForm("anti_phishing");
+  setProviderFormStatus(
+    "anti_phishing",
+    providerId ? "Phishing-провайдер обновлен." : "Phishing-провайдер добавлен.",
+    "success"
+  );
+  await loadProviders();
 }
 
 async function saveClamavMirrors(event) {
@@ -354,11 +578,16 @@ async function deleteListEntry(id) {
 
 window.toggleListEntry = toggleListEntry;
 window.deleteListEntry = deleteListEntry;
+window.editProvider = editProvider;
+window.deleteProvider = deleteProvider;
+window.resetProviderForm = resetProviderForm;
 
 function showPageError(error) {
   const candidates = [
     "stats-grid",
-    "providers-table",
+    "rbl-providers-table",
+    "phishing-providers-table",
+    "other-providers-table",
     "lists-table",
     "messages-table",
     "audit-table",
@@ -382,7 +611,22 @@ async function bootstrap() {
     tasks.push(loadDashboard());
   }
 
-  if (byId("providers-table")) {
+  if (byId("rbl-providers-table")) {
+    renderProviderHints();
+    byId("rbl-provider-form")?.addEventListener("submit", async (event) => {
+      try {
+        await saveRblProvider(event);
+      } catch (error) {
+        setProviderFormStatus("rbl", `Ошибка: ${error.message}`, "error");
+      }
+    });
+    byId("phishing-provider-form")?.addEventListener("submit", async (event) => {
+      try {
+        await savePhishingProvider(event);
+      } catch (error) {
+        setProviderFormStatus("anti_phishing", `Ошибка: ${error.message}`, "error");
+      }
+    });
     tasks.push(loadProviders());
   }
 

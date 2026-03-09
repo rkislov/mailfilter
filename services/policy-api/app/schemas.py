@@ -49,6 +49,16 @@ class ProviderCreate(BaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProviderUpdate(BaseModel):
+    organization_id: int | None = None
+    name: str | None = None
+    kind: str | None = None
+    enabled: bool | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    settings: dict[str, Any] | None = None
+
+
 class ProviderRead(ProviderCreate):
     model_config = ConfigDict(from_attributes=True)
 

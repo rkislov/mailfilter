@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import select
@@ -31,6 +32,7 @@ from app.schemas import (
     PolicyRead,
     ProviderCreate,
     ProviderRead,
+    ProviderUpdate,
     ScanJobRead,
     SettingsBundle,
     VerdictRead,
@@ -85,6 +87,14 @@ def get_settings(db: Session = Depends(get_db)) -> SettingsBundle:
     )
 
 
+@app.get("/api/v1/providers", response_model=list[ProviderRead])
+def list_providers(kind: str | None = Query(default=None), db: Session = Depends(get_db)) -> list[ProviderRead]:
+    query = select(Provider).order_by(Provider.kind.asc(), Provider.name.asc(), Provider.id.asc())
+    if kind:
+        query = query.where(Provider.kind == kind)
+    return [_provider_read(item) for item in db.scalars(query).all()]
+
+
 @app.post("/api/v1/organizations", response_model=OrganizationRead)
 def create_organization(payload: OrganizationCreate, db: Session = Depends(get_db)) -> OrganizationRead:
     organization = Organization(name=payload.name, slug=payload.slug)
@@ -105,19 +115,108 @@ def create_domain(payload: DomainCreate, db: Session = Depends(get_db)) -> Domai
 
 @app.post("/api/v1/providers", response_model=ProviderRead)
 def create_provider(payload: ProviderCreate, db: Session = Depends(get_db)) -> ProviderRead:
-    provider = Provider(
-        organization_id=payload.organization_id,
+    normalized = _normalize_provider_payload(
         name=payload.name,
         kind=payload.kind,
-        enabled=payload.enabled,
         base_url=payload.base_url,
+        settings=payload.settings,
+    )
+    provider = Provider(
+        organization_id=payload.organization_id,
+        name=normalized["name"],
+        kind=normalized["kind"],
+        enabled=payload.enabled,
+        base_url=normalized["base_url"],
         api_key=payload.api_key,
-        settings_json=json.dumps(payload.settings),
+        settings_json=json.dumps(normalized["settings"]),
     )
     db.add(provider)
+    db.flush()
+    db.add(
+        AuditEvent(
+            organization_id=provider.organization_id,
+            user_email="admin@web-ui.local",
+            action="create_provider",
+            target_kind="provider",
+            target_id=str(provider.id),
+            details_json=json.dumps(_provider_read(provider).model_dump(mode="json")),
+        )
+    )
     db.commit()
     db.refresh(provider)
     return _provider_read(provider)
+
+
+@app.patch("/api/v1/providers/{provider_id}", response_model=ProviderRead)
+def update_provider(provider_id: int, payload: ProviderUpdate, db: Session = Depends(get_db)) -> ProviderRead:
+    provider = db.get(Provider, provider_id)
+    if provider is None:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    current_settings = _safe_json(provider.settings_json, {})
+    next_name = payload.name if payload.name is not None else provider.name
+    next_kind = payload.kind if payload.kind is not None else provider.kind
+    next_base_url = payload.base_url if payload.base_url is not None else provider.base_url
+    next_settings = payload.settings if payload.settings is not None else current_settings
+    normalized = _normalize_provider_payload(
+        name=next_name,
+        kind=next_kind,
+        base_url=next_base_url,
+        settings=next_settings,
+    )
+
+    if payload.organization_id is not None:
+        provider.organization_id = payload.organization_id
+    if payload.enabled is not None:
+        provider.enabled = payload.enabled
+    if payload.api_key is not None:
+        provider.api_key = payload.api_key
+
+    provider.name = normalized["name"]
+    provider.kind = normalized["kind"]
+    provider.base_url = normalized["base_url"]
+    provider.settings_json = json.dumps(normalized["settings"])
+
+    db.add(
+        AuditEvent(
+            organization_id=provider.organization_id,
+            user_email="admin@web-ui.local",
+            action="update_provider",
+            target_kind="provider",
+            target_id=str(provider.id),
+            details_json=json.dumps(_provider_read(provider).model_dump(mode="json")),
+        )
+    )
+    db.commit()
+    db.refresh(provider)
+    return _provider_read(provider)
+
+
+@app.delete("/api/v1/providers/{provider_id}")
+def delete_provider(provider_id: int, db: Session = Depends(get_db)) -> dict[str, bool]:
+    provider = db.get(Provider, provider_id)
+    if provider is None:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    db.add(
+        AuditEvent(
+            organization_id=provider.organization_id,
+            user_email="admin@web-ui.local",
+            action="delete_provider",
+            target_kind="provider",
+            target_id=str(provider.id),
+            details_json=json.dumps(
+                {
+                    "name": provider.name,
+                    "kind": provider.kind,
+                    "base_url": provider.base_url,
+                    "settings": _safe_json(provider.settings_json, {}),
+                }
+            ),
+        )
+    )
+    db.delete(provider)
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/api/v1/policies", response_model=PolicyRead)
@@ -343,3 +442,42 @@ def _safe_json(raw: str, default):
         return json.loads(raw)
     except json.JSONDecodeError:
         return default
+
+
+def _normalize_provider_payload(name: str, kind: str, base_url: str | None, settings: dict) -> dict[str, object]:
+    normalized_name = name.strip()
+    normalized_kind = kind.strip()
+    normalized_base_url = base_url.strip() if isinstance(base_url, str) and base_url.strip() else None
+    normalized_settings = dict(settings or {})
+
+    if normalized_kind == "rbl":
+        zone = str(normalized_settings.get("zone") or "").strip().lower()
+        if not zone and normalized_base_url and "://" in normalized_base_url:
+            zone = normalized_base_url.split("://", 1)[1].strip().lower()
+        if not zone:
+            raise HTTPException(status_code=422, detail="RBL zone is required")
+        normalized_settings["zone"] = zone
+        normalized_base_url = f"dnsbl://{zone}"
+
+    if normalized_kind == "anti_phishing":
+        raw_domains = normalized_settings.get("blocked_domains", [])
+        if isinstance(raw_domains, str):
+            raw_domains = re.split(r"[\n,;]+", raw_domains)
+        blocked_domains = []
+        for item in raw_domains:
+            candidate = str(item).strip().lower()
+            if candidate and candidate not in blocked_domains:
+                blocked_domains.append(candidate)
+        if not blocked_domains:
+            raise HTTPException(status_code=422, detail="At least one phishing domain is required")
+        normalized_settings["blocked_domains"] = blocked_domains
+        if not normalized_base_url:
+            slug = re.sub(r"[^a-z0-9]+", "-", normalized_name.lower()).strip("-") or "provider"
+            normalized_base_url = f"feed://local/{slug}"
+
+    return {
+        "name": normalized_name,
+        "kind": normalized_kind,
+        "base_url": normalized_base_url,
+        "settings": normalized_settings,
+    }
