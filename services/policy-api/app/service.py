@@ -1,0 +1,327 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.models import AuditEvent, Domain, MessageEvent, Organization, Policy, Provider, ScanJob, User, Verdict
+from app.providers import AIGateway, ClamAVAdapter, DrWebAdapter, KasperskyAdapter, ThreatIntelAdapter, keyword_signals
+from shared.clients.redis_queue import RedisQueue
+from shared.contracts.message import DashboardSummary, MessageEvaluationRequest, MessageEvaluationResponse, SignalRecord
+from shared.contracts.providers import ClamAVMirrorSettings
+
+
+def seed_defaults(db: Session) -> None:
+    organization = db.scalar(select(Organization).where(Organization.slug == "default"))
+    if organization is None:
+        organization = Organization(name="Default Organization", slug="default")
+        db.add(organization)
+        db.flush()
+        db.add_all(
+            [
+                Domain(organization_id=organization.id, name="local.anispam"),
+                Policy(
+                    organization_id=organization.id,
+                    name="Default policy",
+                    spam_reject_threshold=80.0,
+                    spam_quarantine_threshold=60.0,
+                    enable_ai=True,
+                    enable_rbl=True,
+                    enable_antivirus=True,
+                    enable_anti_phishing=True,
+                ),
+                Provider(
+                    organization_id=organization.id,
+                    name="clamav",
+                    kind="av",
+                    settings_json=json.dumps({"mode": "instream"}),
+                ),
+                Provider(
+                    organization_id=organization.id,
+                    name="spamhaus-zen",
+                    kind="rbl",
+                    settings_json=json.dumps({"zone": "zen.spamhaus.org"}),
+                ),
+                Provider(
+                    organization_id=organization.id,
+                    name="anti-phishing-default",
+                    kind="anti_phishing",
+                    settings_json=json.dumps({"blocked_domains": ["login-payments.example", "auth-wallet.example"]}),
+                ),
+                Provider(
+                    organization_id=organization.id,
+                    name="ollama",
+                    kind="ai",
+                    enabled=False,
+                    base_url=settings.ai_openai_base_url,
+                    settings_json=json.dumps({"model": settings.ai_model}),
+                ),
+                User(
+                    organization_id=organization.id,
+                    email=settings.default_superadmin_email,
+                    role="superadmin",
+                    password_hash=hashlib.sha256(settings.default_superadmin_password.encode("utf-8")).hexdigest(),
+                ),
+            ]
+        )
+        db.commit()
+    ensure_clamav_config(ClamAVMirrorSettings())
+
+
+def ensure_clamav_config(settings_obj: ClamAVMirrorSettings) -> str:
+    config_dir = Path(settings.clamav_config_dir)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    path = config_dir / "freshclam.conf"
+    lines = [
+        f"DatabaseMirror {settings_obj.database_mirror}",
+        f"Checks {settings_obj.checks}",
+        f"ScriptedUpdates {'yes' if settings_obj.script_updated else 'no'}",
+        f"CompressLocalDatabase {'yes' if settings_obj.compress_local_database else 'no'}",
+        f"NotifyClamd {'yes' if settings_obj.notify_clamd else 'no'}",
+    ]
+    if settings_obj.private_mirror:
+        lines.append(f"PrivateMirror {settings_obj.private_mirror}")
+    if settings_obj.dns_database_info:
+        lines.append(f"DNSDatabaseInfo {settings_obj.dns_database_info}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def get_clamav_settings(db: Session) -> ClamAVMirrorSettings:
+    provider = db.scalar(select(Provider).where(Provider.name == "clamav-updates"))
+    if provider is None:
+        return ClamAVMirrorSettings()
+    return ClamAVMirrorSettings(**json.loads(provider.settings_json))
+
+
+def save_clamav_settings(db: Session, payload: ClamAVMirrorSettings, user_email: str = "system@anispam.local") -> str:
+    provider = db.scalar(select(Provider).where(Provider.name == "clamav-updates"))
+    settings_json = json.dumps(payload.model_dump())
+    if provider is None:
+        provider = Provider(name="clamav-updates", kind="av", settings_json=settings_json, enabled=True)
+        db.add(provider)
+    else:
+        provider.settings_json = settings_json
+        provider.updated_at = datetime.utcnow()
+    db.flush()
+    db.add(
+        AuditEvent(
+            organization_id=provider.organization_id,
+            user_email=user_email,
+            action="update_clamav_mirrors",
+            target_kind="provider",
+            target_id=str(provider.id or "clamav-updates"),
+            details_json=settings_json,
+        )
+    )
+    path = ensure_clamav_config(payload)
+    db.commit()
+    return path
+
+
+async def evaluate_message(db: Session, request: MessageEvaluationRequest) -> MessageEvaluationResponse:
+    organization = db.scalar(select(Organization).where(Organization.slug == request.organization_slug))
+    if organization is None:
+        organization = db.scalar(select(Organization).where(Organization.slug == "default"))
+    if organization is None:
+        raise RuntimeError("Default organization is missing")
+
+    policy = db.scalar(select(Policy).where(Policy.organization_id == organization.id).order_by(Policy.id.asc()))
+    if policy is None:
+        raise RuntimeError("Policy is missing for organization")
+
+    message_event = MessageEvent(
+        organization_id=organization.id,
+        source=request.source,
+        queue_id=request.queue_id,
+        client_ip=request.client_ip,
+        helo=request.helo,
+        mail_from=request.mail_from,
+        rcpt_to_json=json.dumps(request.rcpt_to),
+        subject=request.subject,
+        headers_json=json.dumps(request.headers),
+        body_preview=request.body_text[:4000],
+    )
+    db.add(message_event)
+    db.flush()
+
+    reasons: list[str] = []
+    signal_records: list[SignalRecord] = []
+    score = 0.0
+    degraded = False
+
+    keyword_hits = keyword_signals(request.subject, request.body_text)
+    for signal in keyword_hits:
+        score += signal.score
+        reasons.append(signal.summary)
+        signal_records.append(_to_signal_record(signal))
+
+    threat_intel = ThreatIntelAdapter()
+    if policy.enable_rbl:
+        rbl_providers = db.scalars(select(Provider).where(Provider.kind == "rbl", Provider.enabled.is_(True))).all()
+        zones = [_provider_settings(item).get("zone", item.base_url or "") for item in rbl_providers]
+        zones = [zone for zone in zones if zone]
+        for signal in threat_intel.check_rbl(request.client_ip, zones):
+            if signal.matched:
+                score += signal.score
+                reasons.append(signal.summary)
+            elif signal.metadata.get("error"):
+                degraded = True
+            signal_records.append(_to_signal_record(signal))
+
+    if policy.enable_anti_phishing:
+        feeds = db.scalars(select(Provider).where(Provider.kind == "anti_phishing", Provider.enabled.is_(True))).all()
+        blocked_domains: list[str] = []
+        for provider in feeds:
+            blocked_domains.extend(_provider_settings(provider).get("blocked_domains", []))
+        for signal in threat_intel.check_phishing_feeds(request.urls, blocked_domains):
+            score += signal.score
+            reasons.append(signal.summary)
+            signal_records.append(_to_signal_record(signal))
+
+    if policy.enable_antivirus and request.attachments:
+        av_results = []
+        for attachment in request.attachments:
+            av_results.extend(
+                [
+                    ClamAVAdapter().scan(attachment),
+                    DrWebAdapter().scan(attachment),
+                    KasperskyAdapter().scan(attachment),
+                ]
+            )
+        for result in av_results:
+            if result.malicious:
+                score = max(score, 100)
+                reasons.append(f"Malware detected by {result.provider_name}: {result.signature or result.filename}")
+            if result.status == "degraded":
+                degraded = True
+            signal_records.append(
+                SignalRecord(
+                    provider=result.provider_name,
+                    category="av",
+                    severity="critical" if result.malicious else ("medium" if result.status == "degraded" else "info"),
+                    summary=f"{result.provider_name} scanned {result.filename}",
+                    details=result.model_dump(),
+                )
+            )
+
+    ai_provider = db.scalar(select(Provider).where(Provider.kind == "ai", Provider.enabled.is_(True)).order_by(Provider.id.asc()))
+    if policy.enable_ai and ai_provider is not None:
+        ai_result = await AIGateway().score_message(request.subject, request.body_text)
+        if ai_result is not None:
+            score += ai_result.score * 0.2
+            reasons.append(f"AI hint: {ai_result.verdict_hint}")
+            signal_records.append(
+                SignalRecord(
+                    provider=ai_result.provider_name,
+                    category="ai",
+                    severity="medium" if ai_result.score >= 50 else "info",
+                    summary=ai_result.explanation,
+                    details=ai_result.model_dump(mode="json"),
+                )
+            )
+
+    action = "accept"
+    headers_to_add = {"X-AniSpam-Score": f"{score:.2f}"}
+    if score >= policy.spam_reject_threshold:
+        action = "reject"
+        headers_to_add["X-AniSpam-Verdict"] = "reject"
+    elif score >= policy.spam_quarantine_threshold:
+        action = "quarantine"
+        headers_to_add["X-AniSpam-Verdict"] = "quarantine"
+    elif degraded:
+        action = "tempfail"
+        headers_to_add["X-AniSpam-Verdict"] = "degraded"
+    else:
+        headers_to_add["X-AniSpam-Verdict"] = "accept"
+
+    message_event.spam_score = score
+    message_event.final_action = action
+    message_event.degraded = degraded
+
+    verdict = Verdict(
+        message_event_id=message_event.id,
+        policy_id=policy.id,
+        action=action,
+        score=score,
+        reasons_json=json.dumps(reasons),
+        signals_json=json.dumps([item.model_dump(mode="json") for item in signal_records]),
+        headers_json=json.dumps(headers_to_add),
+    )
+    db.add(verdict)
+    db.flush()
+
+    queue_job_id: int | None = None
+    if request.attachments or request.urls:
+        scan_job = ScanJob(
+            message_event_id=message_event.id,
+            job_type="deep_scan",
+            status="queued",
+            payload_json=json.dumps(request.model_dump(mode="json")),
+        )
+        db.add(scan_job)
+        db.flush()
+        RedisQueue(redis_client=_redis(db), queue_name=settings.scan_queue_name).push(
+            {"scan_job_id": scan_job.id, "message_event_id": message_event.id, "organization_slug": request.organization_slug}
+        )
+        queue_job_id = scan_job.id
+
+    db.commit()
+    return MessageEvaluationResponse(
+        action=action,  # type: ignore[arg-type]
+        score=score,
+        reasons=reasons,
+        signals=signal_records,
+        headers_to_add=headers_to_add,
+        message_event_id=message_event.id,
+        verdict_id=verdict.id,
+        queued_scan_job_id=queue_job_id,
+        degraded=degraded,
+    )
+
+
+def dashboard_summary(db: Session) -> DashboardSummary:
+    total_messages = db.scalar(select(func.count(MessageEvent.id))) or 0
+    accepted_messages = db.scalar(select(func.count(MessageEvent.id)).where(MessageEvent.final_action == "accept")) or 0
+    blocked_messages = db.scalar(select(func.count(MessageEvent.id)).where(MessageEvent.final_action == "reject")) or 0
+    quarantined_messages = db.scalar(select(func.count(MessageEvent.id)).where(MessageEvent.final_action == "quarantine")) or 0
+    avg_score = db.scalar(select(func.avg(MessageEvent.spam_score))) or 0.0
+    provider_failures = db.scalar(select(func.count(MessageEvent.id)).where(MessageEvent.degraded.is_(True))) or 0
+    return DashboardSummary(
+        total_messages=int(total_messages),
+        accepted_messages=int(accepted_messages),
+        blocked_messages=int(blocked_messages),
+        quarantined_messages=int(quarantined_messages),
+        avg_score=float(avg_score),
+        provider_failures=int(provider_failures),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+
+def _provider_settings(provider: Provider) -> dict[str, Any]:
+    try:
+        return json.loads(provider.settings_json)
+    except json.JSONDecodeError:
+        return {}
+
+
+def _to_signal_record(signal: Any) -> SignalRecord:
+    return SignalRecord(
+        provider=signal.provider_name,
+        category=signal.kind,
+        severity="high" if signal.matched and signal.score >= 35 else "info",
+        summary=signal.summary,
+        details=signal.metadata,
+    )
+
+
+def _redis(_: Session):
+    from app.db import redis_client
+
+    return redis_client

@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import asyncio
+import base64
+import threading
+from email.parser import BytesParser
+from email.policy import default
+
+import httpx
+
+from app.config import settings
+
+try:
+    import Milter
+except Exception:  # pragma: no cover - optional at runtime
+    Milter = None
+
+BaseMilter = Milter.Base if Milter is not None else object
+
+
+class PolicyClient:
+    async def evaluate(self, payload: dict) -> dict:
+        timeout = settings.smtp_decision_timeout_ms / 1000.0
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(settings.milter_policy_url, json=payload)
+            response.raise_for_status()
+            return response.json()
+
+
+class AniSpamMilter(BaseMilter):  # type: ignore[misc]
+    def __init__(self) -> None:
+        self.client_ip = None
+        self.helo_name = None
+        self.mail_from = ""
+        self.rcpt_to: list[str] = []
+        self.headers: dict[str, str] = {}
+        self.body_chunks: list[bytes] = []
+        self.queue_id = None
+        self.policy_client = PolicyClient()
+
+    def connect(self, hostname, family, hostaddr):
+        self.client_ip = hostaddr[0] if isinstance(hostaddr, tuple) and hostaddr else None
+        return Milter.CONTINUE
+
+    def hello(self, hostname):
+        self.helo_name = hostname
+        return Milter.CONTINUE
+
+    def envfrom(self, mailfrom, *args):
+        self.mail_from = mailfrom
+        return Milter.CONTINUE
+
+    def envrcpt(self, to, *args):
+        self.rcpt_to.append(to)
+        return Milter.CONTINUE
+
+    def header(self, name, value):
+        self.headers[name] = value
+        return Milter.CONTINUE
+
+    def body(self, chunk):
+        self.body_chunks.append(chunk)
+        return Milter.CONTINUE
+
+    def eom(self):
+        try:
+            decision = asyncio.run(self.policy_client.evaluate(self._payload()))
+            action = decision.get("action", "accept")
+            for key, value in decision.get("headers_to_add", {}).items():
+                self.addheader(key, value)
+            if action == "reject":
+                return Milter.REJECT
+            if action == "tempfail":
+                return Milter.TEMPFAIL
+            if action == "quarantine":
+                self.addheader("X-AniSpam-Quarantine", "true")
+                return Milter.ACCEPT
+            return Milter.ACCEPT
+        except Exception:
+            self.addheader("X-AniSpam-Error", "policy-unavailable")
+            return Milter.TEMPFAIL
+
+    def _payload(self) -> dict:
+        raw_body = b"".join(self.body_chunks)
+        message = BytesParser(policy=default).parsebytes(raw_body) if raw_body else None
+        attachments = []
+        if message is not None:
+            for part in message.iter_attachments():
+                payload = part.get_payload(decode=True) or b""
+                attachments.append(
+                    {
+                        "filename": part.get_filename() or "attachment.bin",
+                        "content_type": part.get_content_type(),
+                        "content_base64": base64.b64encode(payload).decode("ascii"),
+                        "size_bytes": len(payload),
+                    }
+                )
+        return {
+            "organization_slug": "default",
+            "source": "milter",
+            "queue_id": self.queue_id,
+            "client_ip": self.client_ip,
+            "helo": self.helo_name,
+            "mail_from": self.mail_from,
+            "rcpt_to": self.rcpt_to,
+            "subject": self.headers.get("Subject"),
+            "headers": self.headers,
+            "body_text": raw_body.decode("utf-8", errors="ignore"),
+            "attachments": attachments,
+            "urls": [],
+        }
+
+
+def start_milter_server() -> None:
+    if Milter is None:
+        return
+    Milter.factory = AniSpamMilter
+    Milter.set_flags(Milter.ADDHDRS)
+    Milter.runmilter("anispam-milter", settings.milter_socket, settings.milter_timeout_seconds)
+
+
+def start_milter_thread() -> threading.Thread | None:
+    if Milter is None:
+        return None
+    thread = threading.Thread(target=start_milter_server, name="anispam-milter", daemon=True)
+    thread.start()
+    return thread

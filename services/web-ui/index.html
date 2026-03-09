@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AniSpam Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              ink: "#07111f",
+              panel: "#0f172a",
+              panel2: "#172554",
+              accent: "#34d399",
+            },
+            boxShadow: {
+              panel: "0 20px 60px rgba(2, 6, 23, 0.45)",
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <div class="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(52,211,153,0.18),_transparent_25%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#020617_100%)]">
+      <div class="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[18rem_1fr]">
+        <aside class="border-b border-slate-800/80 bg-slate-950/80 px-6 py-8 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+          <div class="space-y-4">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-300">AniSpam</p>
+              <h1 class="mt-3 text-3xl font-bold">Anti-spam control plane</h1>
+              <p class="mt-3 text-sm leading-6 text-slate-400">
+                Milter gateway, AV adapters, RBL feeds, AI scoring, audit trail and ClamAV mirror management.
+              </p>
+            </div>
+            <div class="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100 shadow-panel">
+              Container-first deployment with policy API, worker, web UI and pluggable providers.
+            </div>
+          </div>
+          <nav class="mt-8 grid gap-2 text-sm text-slate-300">
+            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#dashboard">Dashboard</a>
+            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#clamav">ClamAV Updates</a>
+            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#providers">Providers</a>
+            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#messages">Message Trace</a>
+            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#audit">Audit Log</a>
+          </nav>
+        </aside>
+        <main class="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+          <section id="dashboard" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Runtime overview</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">Decision dashboard</h2>
+              </div>
+              <button id="refresh-dashboard" class="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Refresh</button>
+            </div>
+            <div id="stats-grid" class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
+          </section>
+
+          <section id="clamav" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Provider management</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">ClamAV update mirrors</h2>
+              </div>
+              <span class="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-200">Web configurable</span>
+            </div>
+            <form id="clamav-form" class="mt-6 grid gap-4 xl:grid-cols-2">
+              <label class="grid gap-2 text-sm text-slate-300">
+                <span>Database mirror</span>
+                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-400" name="database_mirror" required />
+              </label>
+              <label class="grid gap-2 text-sm text-slate-300">
+                <span>Private mirror</span>
+                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="private_mirror" />
+              </label>
+              <label class="grid gap-2 text-sm text-slate-300">
+                <span>DNS database info</span>
+                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="dns_database_info" />
+              </label>
+              <label class="grid gap-2 text-sm text-slate-300">
+                <span>Checks per day</span>
+                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="checks" type="number" min="1" max="96" />
+              </label>
+              <label class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300">
+                <input class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-300" name="script_updated" type="checkbox" />
+                <span>Scripted updates</span>
+              </label>
+              <label class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300">
+                <input class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-300" name="compress_local_database" type="checkbox" />
+                <span>Compress local database</span>
+              </label>
+              <label class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300 xl:col-span-2">
+                <input class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-300" name="notify_clamd" type="checkbox" />
+                <span>Notify clamd after updates</span>
+              </label>
+              <div class="xl:col-span-2 flex flex-wrap items-center gap-3">
+                <button type="submit" class="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Save mirrors</button>
+                <p class="text-sm text-slate-400">Updates generate a shared `freshclam.conf` for the ClamAV container.</p>
+              </div>
+            </form>
+            <pre id="clamav-config-path" class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300"></pre>
+          </section>
+
+          <section id="providers" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Integrations</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">Providers</h2>
+              </div>
+            </div>
+            <div id="providers-table" class="mt-6 grid gap-3"></div>
+          </section>
+
+          <section id="messages" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Observability</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">Message trace</h2>
+              </div>
+              <button id="refresh-messages" class="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700">Refresh</button>
+            </div>
+            <div class="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+              <div id="messages-table" class="grid gap-3"></div>
+              <div id="message-trace" class="min-h-40"></div>
+            </div>
+          </section>
+
+          <section id="audit" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Security operations</p>
+              <h2 class="mt-2 text-2xl font-semibold text-white">Audit log</h2>
+            </div>
+            <div id="audit-table" class="mt-6 grid gap-3"></div>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+# AniSpam milter integration example for Postfix
+
+smtpd_milters = inet:milter-service:9900
+non_smtpd_milters = inet:milter-service:9900
+milter_default_action = tempfail
+milter_protocol = 6
