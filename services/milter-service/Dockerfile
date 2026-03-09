@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY . /app
 
-CMD ["uvicorn", "app.main:app", "--app-dir", "/app/services/milter-service", "--host", "0.0.0.0", "--port", "9901"]
+CMD ["python", "/app/services/milter-service/launcher.py"]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import threading
 from email.parser import BytesParser
 from email.policy import default
@@ -16,6 +17,17 @@ except Exception:  # pragma: no cover - optional at runtime
     Milter = None
 
 BaseMilter = Milter.Base if Milter is not None else object
+LOG = logging.getLogger("anispam.milter")
+
+
+class RuntimeState:
+    def __init__(self) -> None:
+        self.import_ok = Milter is not None
+        self.running = False
+        self.last_error: str | None = None
+
+
+runtime_state = RuntimeState()
 
 
 class PolicyClient:
@@ -117,15 +129,19 @@ class AniSpamMilter(BaseMilter):  # type: ignore[misc]
 
 def start_milter_server() -> None:
     if Milter is None:
+        runtime_state.last_error = "pymilter import failed"
+        LOG.error("pymilter import failed; milter listener is not available")
         return
-    Milter.factory = AniSpamMilter
-    Milter.set_flags(Milter.ADDHDRS)
-    Milter.runmilter("anispam-milter", settings.milter_socket, settings.milter_timeout_seconds)
-
-
-def start_milter_thread() -> threading.Thread | None:
-    if Milter is None:
-        return None
-    thread = threading.Thread(target=start_milter_server, name="anispam-milter", daemon=True)
-    thread.start()
-    return thread
+    try:
+        LOG.info("starting milter listener on %s", settings.milter_socket)
+        runtime_state.running = True
+        runtime_state.last_error = None
+        Milter.factory = AniSpamMilter
+        Milter.set_flags(Milter.ADDHDRS)
+        Milter.runmilter("anispam-milter", settings.milter_socket, settings.milter_timeout_seconds)
+    except Exception as exc:
+        runtime_state.last_error = str(exc)
+        LOG.exception("milter listener crashed")
+        raise
+    finally:
+        runtime_state.running = False
