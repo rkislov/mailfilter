@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import AuditEvent, Domain, MessageEvent, Organization, Policy, Provider, ScanJob, User, Verdict
+from app.models import AuditEvent, Domain, ListEntry, MessageEvent, Organization, Policy, Provider, ScanJob, User, Verdict
 from app.providers import AIGateway, ClamAVAdapter, DKIMAdapter, DrWebAdapter, KasperskyAdapter, ThreatIntelAdapter, keyword_signals
 from shared.clients.redis_queue import RedisQueue
 from shared.contracts.message import DashboardSummary, MessageEvaluationRequest, MessageEvaluationResponse, SignalRecord
@@ -40,18 +40,21 @@ def seed_defaults(db: Session) -> None:
                     organization_id=organization.id,
                     name="clamav",
                     kind="av",
+                    base_url=f"tcp://{settings.clamav_host}:{settings.clamav_port}",
                     settings_json=json.dumps({"mode": "instream"}),
                 ),
                 Provider(
                     organization_id=organization.id,
                     name="spamhaus-zen",
                     kind="rbl",
+                    base_url="dnsbl://zen.spamhaus.org",
                     settings_json=json.dumps({"zone": "zen.spamhaus.org"}),
                 ),
                 Provider(
                     organization_id=organization.id,
                     name="anti-phishing-default",
                     kind="anti_phishing",
+                    base_url="feed://local/anti-phishing-default",
                     settings_json=json.dumps({"blocked_domains": ["login-payments.example", "auth-wallet.example"]}),
                 ),
                 Provider(
@@ -77,10 +80,29 @@ def seed_defaults(db: Session) -> None:
                     role="superadmin",
                     password_hash=hashlib.sha256(settings.default_superadmin_password.encode("utf-8")).hexdigest(),
                 ),
+                ListEntry(
+                    organization_id=organization.id,
+                    list_type="allow",
+                    match_type="sender_domain",
+                    value="trusted.local",
+                    action="accept",
+                    enabled=True,
+                    comment="Example allowlist domain",
+                ),
+                ListEntry(
+                    organization_id=organization.id,
+                    list_type="block",
+                    match_type="sender_domain",
+                    value="blocked.local",
+                    action="reject",
+                    enabled=True,
+                    comment="Example blocklist domain",
+                ),
             ]
         )
         db.commit()
     ensure_ai_runtime_provider(db)
+    ensure_default_provider_metadata(db)
     ensure_clamav_config(ClamAVMirrorSettings())
 
 
@@ -120,6 +142,23 @@ def ensure_ai_runtime_provider(db: Session) -> None:
             settings_json=json.dumps(_default_ai_runtime().model_dump()),
         )
         db.add(provider)
+        db.commit()
+
+
+def ensure_default_provider_metadata(db: Session) -> None:
+    changed = False
+    providers = db.scalars(select(Provider)).all()
+    for provider in providers:
+        if provider.name == "clamav" and not provider.base_url:
+            provider.base_url = f"tcp://{settings.clamav_host}:{settings.clamav_port}"
+            changed = True
+        elif provider.name == "spamhaus-zen" and not provider.base_url:
+            provider.base_url = "dnsbl://zen.spamhaus.org"
+            changed = True
+        elif provider.name == "anti-phishing-default" and not provider.base_url:
+            provider.base_url = "feed://local/anti-phishing-default"
+            changed = True
+    if changed:
         db.commit()
 
 
@@ -211,6 +250,66 @@ async def evaluate_message(db: Session, request: MessageEvaluationRequest) -> Me
     signal_records: list[SignalRecord] = []
     score = 0.0
     degraded = False
+
+    list_match = _match_list_entries(
+        db=db,
+        organization_id=organization.id,
+        mail_from=request.mail_from,
+        client_ip=request.client_ip,
+        helo=request.helo,
+        rcpt_to=request.rcpt_to,
+        subject=request.subject,
+    )
+    if list_match is not None:
+        signal_records.append(
+            SignalRecord(
+                provider="lists",
+                category="policy",
+                severity="high" if list_match.list_type == "block" else "info",
+                summary=f"{'Black' if list_match.list_type == 'block' else 'White'}list matched: {list_match.value}",
+                details={
+                    "list_type": list_match.list_type,
+                    "match_type": list_match.match_type,
+                    "value": list_match.value,
+                    "action": list_match.action,
+                    "comment": list_match.comment,
+                },
+            )
+        )
+        reasons.append(
+            f"{'Black' if list_match.list_type == 'block' else 'White'}list matched: {list_match.value}"
+        )
+        action = "accept" if list_match.list_type == "allow" else list_match.action
+        message_event.spam_score = 0.0 if action == "accept" else 100.0
+        message_event.final_action = action
+        message_event.degraded = False
+        headers_to_add = {
+            "X-AniSpam-Score": f"{message_event.spam_score:.2f}",
+            "X-AniSpam-Verdict": action,
+            "X-AniSpam-List": f"{list_match.list_type}:{list_match.match_type}",
+        }
+        verdict = Verdict(
+            message_event_id=message_event.id,
+            policy_id=policy.id,
+            action=action,
+            score=message_event.spam_score,
+            reasons_json=json.dumps(reasons),
+            signals_json=json.dumps([item.model_dump(mode="json") for item in signal_records]),
+            headers_json=json.dumps(headers_to_add),
+        )
+        db.add(verdict)
+        db.commit()
+        return MessageEvaluationResponse(
+            action=action,  # type: ignore[arg-type]
+            score=message_event.spam_score,
+            reasons=reasons,
+            signals=signal_records,
+            headers_to_add=headers_to_add,
+            message_event_id=message_event.id,
+            verdict_id=verdict.id,
+            queued_scan_job_id=None,
+            degraded=False,
+        )
 
     keyword_hits = keyword_signals(request.subject, request.body_text)
     for signal in keyword_hits:
@@ -405,3 +504,39 @@ def _default_ai_runtime() -> AIRuntimeSettings:
         gpustack_api_key=settings.gpustack_api_key or None,
         gpustack_model=settings.gpustack_model,
     )
+
+
+def _match_list_entries(
+    db: Session,
+    organization_id: int,
+    mail_from: str,
+    client_ip: str | None,
+    helo: str | None,
+    rcpt_to: list[str],
+    subject: str | None,
+) -> ListEntry | None:
+    entries = db.scalars(
+        select(ListEntry)
+        .where(ListEntry.organization_id == organization_id, ListEntry.enabled.is_(True))
+        .order_by(ListEntry.list_type.asc(), ListEntry.id.asc())
+    ).all()
+    sender_domain = mail_from.split("@", 1)[1].lower() if "@" in mail_from else ""
+    subject_lower = (subject or "").lower()
+    for entry in entries:
+        value = entry.value.lower()
+        matched = False
+        if entry.match_type == "sender":
+            matched = mail_from.lower() == value
+        elif entry.match_type == "sender_domain":
+            matched = sender_domain == value
+        elif entry.match_type == "client_ip":
+            matched = (client_ip or "").lower() == value
+        elif entry.match_type == "helo":
+            matched = (helo or "").lower() == value
+        elif entry.match_type == "recipient":
+            matched = any(item.lower() == value for item in rcpt_to)
+        elif entry.match_type == "subject_contains":
+            matched = value in subject_lower
+        if matched:
+            return entry
+    return None

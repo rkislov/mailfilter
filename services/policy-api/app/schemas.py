@@ -138,6 +138,27 @@ class AuditEventRead(BaseModel):
     created_at: datetime
 
 
+class ListEntryCreate(BaseModel):
+    organization_id: int = 1
+    list_type: str
+    match_type: str
+    value: str
+    action: str = "accept"
+    enabled: bool = True
+    comment: str | None = None
+
+
+class ListEntryUpdate(BaseModel):
+    enabled: bool | None = None
+    comment: str | None = None
+
+
+class ListEntryRead(ListEntryCreate):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class SettingsBundle(BaseModel):
     organizations: list[OrganizationRead]
     domains: list[DomainRead]
@@ -145,6 +166,7 @@ class SettingsBundle(BaseModel):
     policies: list[PolicyRead]
     clamav_mirrors: ClamAVMirrorSettings
     ai_runtime: AIRuntimeSettings
+    list_entries: list[ListEntryRead]
 
 
 class ClamAVMirrorSettingsResponse(BaseModel):

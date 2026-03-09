@@ -97,6 +97,93 @@ function fillAiRuntimeForm(settings) {
   }
 }
 
+function renderListEntries(entries) {
+  renderList(
+    "lists-table",
+    entries,
+    (entry) => `
+      <div class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <strong class="text-base text-white">${entry.list_type === "allow" ? "Белый список" : "Черный список"}</strong>
+            <p class="mt-1 text-sm text-slate-400">${entry.match_type}: ${entry.value}</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button class="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-700" onclick="toggleListEntry(${entry.id}, ${!entry.enabled})">
+              ${entry.enabled ? "Выключить" : "Включить"}
+            </button>
+            <button class="rounded-xl bg-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/30" onclick="deleteListEntry(${entry.id})">
+              Удалить
+            </button>
+          </div>
+        </div>
+        <div class="mt-3 grid gap-1 text-sm text-slate-400">
+          <span>Действие: ${entry.action}</span>
+          <span>Активна: ${entry.enabled ? "да" : "нет"}</span>
+          <span>Комментарий: ${entry.comment || "-"}</span>
+        </div>
+      </div>
+    `,
+    "Записей в белом и черном списке пока нет."
+  );
+}
+
+function getProviderSource(provider) {
+  const settings = provider.settings || {};
+
+  if (provider.base_url) {
+    return provider.base_url;
+  }
+
+  if (provider.name === "clamav") {
+    return "tcp://clamav:3310";
+  }
+
+  if (provider.kind === "rbl" && settings.zone) {
+    return `dnsbl://${settings.zone}`;
+  }
+
+  if (provider.kind === "anti_phishing" && Array.isArray(settings.blocked_domains)) {
+    const preview = settings.blocked_domains.slice(0, 3).join(", ");
+    const suffix = settings.blocked_domains.length > 3 ? ` и еще ${settings.blocked_domains.length - 3}` : "";
+    return preview ? `feed: ${preview}${suffix}` : "локальный feed";
+  }
+
+  if (provider.name === "ai-runtime") {
+    if (settings.provider_mode === "gpustack") {
+      return settings.gpustack_base_url || "GPUStack не задан";
+    }
+    if (settings.provider_mode === "ollama") {
+      return settings.ollama_base_url || "Ollama не задан";
+    }
+    return "режим отключен";
+  }
+
+  return "-";
+}
+
+function getProviderExtra(provider) {
+  const settings = provider.settings || {};
+
+  if (provider.kind === "rbl" && settings.zone) {
+    return `Зона RBL: ${settings.zone}`;
+  }
+
+  if (provider.kind === "anti_phishing" && Array.isArray(settings.blocked_domains)) {
+    return `Доменов в feed: ${settings.blocked_domains.length}`;
+  }
+
+  if (provider.kind === "ai" && settings.model) {
+    return `Модель: ${settings.model}`;
+  }
+
+  if (provider.name === "ai-runtime" && settings.provider_mode) {
+    return `Режим: ${settings.provider_mode}`;
+  }
+
+  return "";
+}
+
 async function loadDashboard() {
   const dashboard = await api("/dashboard");
   renderStats(dashboard.summary);
@@ -115,7 +202,8 @@ async function loadProviders() {
         </div>
         <div class="mt-3 grid gap-1 text-sm text-slate-400">
           <span>Активен: ${provider.enabled ? "да" : "нет"}</span>
-          <span>URL: ${provider.base_url || "-"}</span>
+          <span>Источник: ${getProviderSource(provider)}</span>
+          ${getProviderExtra(provider) ? `<span>${getProviderExtra(provider)}</span>` : ""}
         </div>
       </div>
     `
@@ -184,6 +272,11 @@ async function loadAiRuntime() {
   fillAiRuntimeForm(data.settings);
 }
 
+async function loadLists() {
+  const entries = await api("/lists");
+  renderListEntries(entries);
+}
+
 async function saveClamavMirrors(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -221,10 +314,52 @@ async function saveAiRuntime(event) {
   fillAiRuntimeForm(data.settings);
 }
 
+async function saveListEntry(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = {
+    organization_id: Number(form.organization_id.value || 1),
+    list_type: form.list_type.value,
+    match_type: form.match_type.value,
+    value: form.value.value,
+    action: form.action.value,
+    enabled: form.enabled.checked,
+    comment: form.comment.value || null,
+  };
+  await api("/lists", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  form.reset();
+  form.organization_id.value = "1";
+  form.action.value = payload.list_type === "allow" ? "accept" : "reject";
+  form.enabled.checked = true;
+  await loadLists();
+}
+
+async function toggleListEntry(id, enabled) {
+  await api(`/lists/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+  await loadLists();
+}
+
+async function deleteListEntry(id) {
+  await api(`/lists/${id}`, {
+    method: "DELETE",
+  });
+  await loadLists();
+}
+
+window.toggleListEntry = toggleListEntry;
+window.deleteListEntry = deleteListEntry;
+
 function showPageError(error) {
   const candidates = [
     "stats-grid",
     "providers-table",
+    "lists-table",
     "messages-table",
     "audit-table",
     "clamav-config-path",
@@ -268,6 +403,11 @@ async function bootstrap() {
   if (byId("ai-runtime-form")) {
     byId("ai-runtime-form").addEventListener("submit", saveAiRuntime);
     tasks.push(loadAiRuntime());
+  }
+
+  if (byId("lists-form")) {
+    byId("lists-form").addEventListener("submit", saveListEntry);
+    tasks.push(loadLists());
   }
 
   await Promise.all(tasks);

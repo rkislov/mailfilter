@@ -80,6 +80,21 @@ class Policy(Base):
     organization: Mapped[Organization] = relationship(back_populates="policies")
 
 
+class ListEntry(Base):
+    __tablename__ = "list_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    list_type: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    match_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    value: Mapped[str] = mapped_column(String(512), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False, default="accept")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    comment: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class MessageEvent(Base):
     __tablename__ = "message_events"
 

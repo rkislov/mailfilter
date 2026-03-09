@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import Base, SessionLocal, engine, get_db, redis_client
-from app.models import AuditEvent, Domain, MessageEvent, Organization, Policy, Provider, ScanJob, Verdict
+from app.models import AuditEvent, Domain, ListEntry, MessageEvent, Organization, Policy, Provider, ScanJob, Verdict
 from app.schemas import (
     AIRuntimeSettingsResponse,
     AIRuntimeSettingsUpdate,
@@ -20,6 +20,9 @@ from app.schemas import (
     EvaluateRequest,
     EvaluateResponse,
     HealthResponse,
+    ListEntryCreate,
+    ListEntryRead,
+    ListEntryUpdate,
     MessageEventRead,
     MessageTrace,
     OrganizationCreate,
@@ -78,6 +81,7 @@ def get_settings(db: Session = Depends(get_db)) -> SettingsBundle:
         policies=[PolicyRead.model_validate(item) for item in db.scalars(select(Policy)).all()],
         clamav_mirrors=get_clamav_settings(db),
         ai_runtime=get_ai_runtime_settings(db),
+        list_entries=[_list_entry_read(item) for item in db.scalars(select(ListEntry).order_by(ListEntry.id.desc())).all()],
     )
 
 
@@ -163,6 +167,74 @@ def list_audit_events(limit: int = Query(default=50, le=200), db: Session = Depe
     ]
 
 
+@app.get("/api/v1/lists", response_model=list[ListEntryRead])
+def list_list_entries(db: Session = Depends(get_db)) -> list[ListEntryRead]:
+    entries = db.scalars(select(ListEntry).order_by(ListEntry.id.desc())).all()
+    return [_list_entry_read(item) for item in entries]
+
+
+@app.post("/api/v1/lists", response_model=ListEntryRead)
+def create_list_entry(payload: ListEntryCreate, db: Session = Depends(get_db)) -> ListEntryRead:
+    entry = ListEntry(**payload.model_dump())
+    db.add(entry)
+    db.flush()
+    db.add(
+        AuditEvent(
+            organization_id=entry.organization_id,
+            user_email="admin@web-ui.local",
+            action="create_list_entry",
+            target_kind="list_entry",
+            target_id=str(entry.id),
+            details_json=json.dumps(payload.model_dump()),
+        )
+    )
+    db.commit()
+    db.refresh(entry)
+    return _list_entry_read(entry)
+
+
+@app.patch("/api/v1/lists/{entry_id}", response_model=ListEntryRead)
+def update_list_entry(entry_id: int, payload: ListEntryUpdate, db: Session = Depends(get_db)) -> ListEntryRead:
+    entry = db.get(ListEntry, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="List entry not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(entry, key, value)
+    db.add(
+        AuditEvent(
+            organization_id=entry.organization_id,
+            user_email="admin@web-ui.local",
+            action="update_list_entry",
+            target_kind="list_entry",
+            target_id=str(entry.id),
+            details_json=json.dumps(payload.model_dump(exclude_unset=True)),
+        )
+    )
+    db.commit()
+    db.refresh(entry)
+    return _list_entry_read(entry)
+
+
+@app.delete("/api/v1/lists/{entry_id}")
+def delete_list_entry(entry_id: int, db: Session = Depends(get_db)) -> dict[str, bool]:
+    entry = db.get(ListEntry, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="List entry not found")
+    db.add(
+        AuditEvent(
+            organization_id=entry.organization_id,
+            user_email="admin@web-ui.local",
+            action="delete_list_entry",
+            target_kind="list_entry",
+            target_id=str(entry.id),
+            details_json=json.dumps({"value": entry.value, "list_type": entry.list_type}),
+        )
+    )
+    db.delete(entry)
+    db.commit()
+    return {"ok": True}
+
+
 @app.get("/api/v1/providers/clamav/mirrors", response_model=ClamAVMirrorSettingsResponse)
 def read_clamav_mirrors(db: Session = Depends(get_db)) -> ClamAVMirrorSettingsResponse:
     settings_payload = get_clamav_settings(db)
@@ -246,6 +318,21 @@ def _scan_job_read(item: ScanJob) -> ScanJobRead:
         status=item.status,
         payload=_safe_json(item.payload_json, {}),
         result=_safe_json(item.result_json, {}),
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
+
+
+def _list_entry_read(item: ListEntry) -> ListEntryRead:
+    return ListEntryRead(
+        id=item.id,
+        organization_id=item.organization_id,
+        list_type=item.list_type,
+        match_type=item.match_type,
+        value=item.value,
+        action=item.action,
+        enabled=item.enabled,
+        comment=item.comment,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
