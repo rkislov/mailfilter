@@ -22,6 +22,39 @@ docker compose up --build
 3. Open the admin UI at [http://localhost:8081](http://localhost:8081).
 4. Open the API docs at [http://localhost:8080/docs](http://localhost:8080/docs).
 
+## Russian web UI
+
+The admin console is now split into separate Russian-language windows:
+
+- `index.html`: dashboard
+- `clamav.html`: ClamAV mirrors and update settings
+- `ai-runtime.html`: Ollama and GPUStack runtime configuration
+- `providers.html`: provider inventory
+- `messages.html`: message trace and decision chain
+- `audit.html`: audit log
+- `network.html`: deployment in LAN and DNS recommendations
+
+## Installation in LAN and DNS
+
+If AniSpam is deployed inside a local network, make sure Docker uses a dedicated subnet that does not overlap with your LAN, VPN, or virtualization ranges.
+
+Use the following environment variables:
+
+```env
+NETWORK_SUBNET=172.30.0.0/24
+DNS_RESOLVER_1=192.168.1.1
+DNS_RESOLVER_2=1.1.1.1
+DNS_SEARCH_DOMAIN=mail.local
+```
+
+Recommendations:
+
+- `DNS_RESOLVER_1` should be your primary reachable recursive DNS server.
+- `DNS_RESOLVER_2` should be a backup resolver.
+- `DNS_SEARCH_DOMAIN` should match your internal search domain if you use one.
+- RBL, DKIM, anti-phishing feeds, and ClamAV updates require working DNS resolution from inside containers.
+- If your corporate DNS does not provide recursion for external zones, deploy a local resolver such as `Unbound` and point AniSpam containers to it.
+
 ## Postfix relay setup
 
 AniSpam is designed to sit next to a Postfix relay and inspect mail through the `milter` protocol before the message is accepted for delivery. A common deployment pattern is:

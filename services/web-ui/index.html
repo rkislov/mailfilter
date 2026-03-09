@@ -1,20 +1,14 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AniSpam Admin</title>
+    <title>AniSpam | Панель управления</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
-            colors: {
-              ink: "#07111f",
-              panel: "#0f172a",
-              panel2: "#172554",
-              accent: "#34d399",
-            },
             boxShadow: {
               panel: "0 20px 60px rgba(2, 6, 23, 0.45)",
             },
@@ -31,166 +25,53 @@
           <div class="space-y-4">
             <div>
               <p class="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-300">AniSpam</p>
-              <h1 class="mt-3 text-3xl font-bold">Anti-spam control plane</h1>
+              <h1 class="mt-3 text-3xl font-bold">Панель управления</h1>
               <p class="mt-3 text-sm leading-6 text-slate-400">
-                Milter gateway, AV adapters, RBL feeds, AI scoring, audit trail and ClamAV mirror management.
+                Антиспам-платформа с milter, антивирусами, RBL, DKIM, AI-проверкой и журналом решений.
               </p>
             </div>
             <div class="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-100 shadow-panel">
-              Container-first deployment with policy API, worker, web UI and pluggable providers.
+              Разделы вынесены в отдельные окна интерфейса для удобной работы администратора.
             </div>
           </div>
-          <nav class="mt-8 grid gap-2 text-sm text-slate-300">
-            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#dashboard">Dashboard</a>
-            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#clamav">ClamAV Updates</a>
-            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#ai-runtime">AI Runtime</a>
-            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#providers">Providers</a>
-            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#messages">Message Trace</a>
-            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#audit">Audit Log</a>
+          <nav class="mt-8 grid gap-2 text-sm">
+            <a data-nav href="/index.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Панель</a>
+            <a data-nav href="/clamav.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">ClamAV</a>
+            <a data-nav href="/ai-runtime.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">AI Runtime</a>
+            <a data-nav href="/providers.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Провайдеры</a>
+            <a data-nav href="/messages.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Сообщения</a>
+            <a data-nav href="/audit.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Аудит</a>
+            <a data-nav href="/network.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Сеть и DNS</a>
           </nav>
         </aside>
         <main class="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-          <section id="dashboard" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+          <section class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Runtime overview</p>
-                <h2 class="mt-2 text-2xl font-semibold text-white">Decision dashboard</h2>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Обзор</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">Сводка по обработке писем</h2>
               </div>
-              <button id="refresh-dashboard" class="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Refresh</button>
+              <button id="refresh-dashboard" class="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Обновить</button>
             </div>
             <div id="stats-grid" class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3"></div>
           </section>
 
-          <section id="clamav" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Provider management</p>
-                <h2 class="mt-2 text-2xl font-semibold text-white">ClamAV update mirrors</h2>
-              </div>
-              <span class="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-200">Web configurable</span>
-            </div>
-            <form id="clamav-form" class="mt-6 grid gap-4 xl:grid-cols-2">
-              <label class="grid gap-2 text-sm text-slate-300">
-                <span>Database mirror</span>
-                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-emerald-400" name="database_mirror" required />
-              </label>
-              <label class="grid gap-2 text-sm text-slate-300">
-                <span>Private mirror</span>
-                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="private_mirror" />
-              </label>
-              <label class="grid gap-2 text-sm text-slate-300">
-                <span>DNS database info</span>
-                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="dns_database_info" />
-              </label>
-              <label class="grid gap-2 text-sm text-slate-300">
-                <span>Checks per day</span>
-                <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="checks" type="number" min="1" max="96" />
-              </label>
-              <label class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300">
-                <input class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-300" name="script_updated" type="checkbox" />
-                <span>Scripted updates</span>
-              </label>
-              <label class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300">
-                <input class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-300" name="compress_local_database" type="checkbox" />
-                <span>Compress local database</span>
-              </label>
-              <label class="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300 xl:col-span-2">
-                <input class="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-400 focus:ring-emerald-300" name="notify_clamd" type="checkbox" />
-                <span>Notify clamd after updates</span>
-              </label>
-              <div class="xl:col-span-2 flex flex-wrap items-center gap-3">
-                <button type="submit" class="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Save mirrors</button>
-                <p class="text-sm text-slate-400">Updates generate a shared `freshclam.conf` for the ClamAV container.</p>
-              </div>
-            </form>
-            <pre id="clamav-config-path" class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300"></pre>
-          </section>
-
-          <section id="ai-runtime" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">AI scoring</p>
-                <h2 class="mt-2 text-2xl font-semibold text-white">AI runtime settings</h2>
-              </div>
-              <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-cyan-200">Ollama / GPUStack</span>
-            </div>
-            <form id="ai-runtime-form" class="mt-6 grid gap-4 xl:grid-cols-2">
-              <label class="grid gap-2 text-sm text-slate-300 xl:col-span-2">
-                <span>Provider mode</span>
-                <select class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none focus:border-emerald-400" name="provider_mode">
-                  <option value="disabled">Disabled</option>
-                  <option value="ollama">Ollama</option>
-                  <option value="gpustack">GPUStack</option>
-                </select>
-              </label>
-              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 xl:col-span-2">
-                <p class="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">Ollama</p>
-                <div class="grid gap-4 xl:grid-cols-2">
-                  <label class="grid gap-2 text-sm text-slate-300">
-                    <span>Base URL</span>
-                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="ollama_base_url" />
-                  </label>
-                  <label class="grid gap-2 text-sm text-slate-300">
-                    <span>Model</span>
-                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="ollama_model" />
-                  </label>
-                </div>
-              </div>
-              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 xl:col-span-2">
-                <p class="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">GPUStack</p>
-                <div class="grid gap-4 xl:grid-cols-2">
-                  <label class="grid gap-2 text-sm text-slate-300">
-                    <span>Base URL</span>
-                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_base_url" />
-                  </label>
-                  <label class="grid gap-2 text-sm text-slate-300">
-                    <span>Model</span>
-                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_model" />
-                  </label>
-                  <label class="grid gap-2 text-sm text-slate-300 xl:col-span-2">
-                    <span>API key</span>
-                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_api_key" />
-                  </label>
-                </div>
-              </div>
-              <div class="xl:col-span-2 flex flex-wrap items-center gap-3">
-                <button type="submit" class="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Save AI runtime</button>
-                <p class="text-sm text-slate-400">Use separate model names for local Ollama and remote GPUStack runtimes.</p>
-              </div>
-            </form>
-            <pre id="ai-runtime-summary" class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300"></pre>
-          </section>
-
-          <section id="providers" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Integrations</p>
-                <h2 class="mt-2 text-2xl font-semibold text-white">Providers</h2>
-              </div>
-            </div>
-            <div id="providers-table" class="mt-6 grid gap-3"></div>
-          </section>
-
-          <section id="messages" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Observability</p>
-                <h2 class="mt-2 text-2xl font-semibold text-white">Message trace</h2>
-              </div>
-              <button id="refresh-messages" class="rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700">Refresh</button>
-            </div>
-            <div class="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-              <div id="messages-table" class="grid gap-3"></div>
-              <div id="message-trace" class="min-h-40"></div>
-            </div>
-          </section>
-
-          <section id="audit" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
-            <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Security operations</p>
-              <h2 class="mt-2 text-2xl font-semibold text-white">Audit log</h2>
-            </div>
-            <div id="audit-table" class="mt-6 grid gap-3"></div>
+          <section class="grid gap-4 lg:grid-cols-3">
+            <a href="/clamav.html" class="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur transition hover:border-emerald-400/40">
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Окно 1</p>
+              <h3 class="mt-3 text-xl font-semibold text-white">Настройки ClamAV</h3>
+              <p class="mt-3 text-sm text-slate-400">Зеркала обновлений, FreshClam и связанные параметры движка.</p>
+            </a>
+            <a href="/ai-runtime.html" class="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur transition hover:border-emerald-400/40">
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Окно 2</p>
+              <h3 class="mt-3 text-xl font-semibold text-white">AI Runtime</h3>
+              <p class="mt-3 text-sm text-slate-400">Отдельные настройки Ollama и GPUStack, включая выбор модели.</p>
+            </a>
+            <a href="/network.html" class="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur transition hover:border-emerald-400/40">
+              <p class="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Окно 3</p>
+              <h3 class="mt-3 text-xl font-semibold text-white">Сеть и DNS</h3>
+              <p class="mt-3 text-sm text-slate-400">Параметры подсети, DNS-резолверов и рекомендации для установки в локальной сети.</p>
+            </a>
           </section>
         </main>
       </div>

@@ -14,6 +14,27 @@ docker compose up --build
 - UI: `http://localhost:8081`
 - Milter socket: `inet:9900@0.0.0.0`
 
+## LAN and DNS
+
+- Set `NETWORK_SUBNET` to a Docker subnet that does not overlap with your LAN, VPN, or hypervisor networks.
+- Set `DNS_RESOLVER_1` and `DNS_RESOLVER_2` to recursive DNS servers reachable from the Docker host.
+- Set `DNS_SEARCH_DOMAIN` if your mail environment uses an internal search suffix.
+- DNS matters for:
+  - DKIM TXT lookups
+  - RBL and DNSBL queries
+  - anti-phishing feed host resolution
+  - ClamAV mirror resolution
+- If internal DNS blocks external recursion, use a local resolver like `Unbound` and point the stack to it.
+
+Example:
+
+```env
+NETWORK_SUBNET=172.30.0.0/24
+DNS_RESOLVER_1=192.168.1.1
+DNS_RESOLVER_2=1.1.1.1
+DNS_SEARCH_DOMAIN=mail.local
+```
+
 ## ClamAV updates
 
 - The UI exposes ClamAV mirror settings at the `ClamAV Updates` section.

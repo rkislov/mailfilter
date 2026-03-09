@@ -1,5 +1,9 @@
 const API_BASE = "__API_BASE__";
 
+function byId(id) {
+  return document.getElementById(id);
+}
+
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -11,36 +15,57 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function renderList(targetId, items, mapper, emptyText = "Пока нет данных.") {
+  const root = byId(targetId);
+  if (!root) {
+    return;
+  }
+  root.innerHTML =
+    items.map(mapper).join("") ||
+    `<div class="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-5 text-sm text-slate-400">${emptyText}</div>`;
+}
+
+function setActiveNav() {
+  const current = window.location.pathname === "/" ? "/index.html" : window.location.pathname;
+  document.querySelectorAll("[data-nav]").forEach((link) => {
+    const isActive = link.getAttribute("href") === current;
+    link.classList.toggle("border-emerald-400", isActive);
+    link.classList.toggle("bg-slate-900", isActive);
+    link.classList.toggle("text-white", isActive);
+    link.classList.toggle("text-slate-300", !isActive);
+  });
+}
+
 function renderStats(summary) {
+  const root = byId("stats-grid");
+  if (!root) {
+    return;
+  }
   const stats = [
-    ["Messages", summary.total_messages],
-    ["Accepted", summary.accepted_messages],
-    ["Rejected", summary.blocked_messages],
-    ["Quarantined", summary.quarantined_messages],
-    ["Avg score", summary.avg_score.toFixed(2)],
-    ["Provider failures", summary.provider_failures],
+    ["Всего писем", summary.total_messages],
+    ["Принято", summary.accepted_messages],
+    ["Отклонено", summary.blocked_messages],
+    ["Карантин", summary.quarantined_messages],
+    ["Средний score", summary.avg_score.toFixed(2)],
+    ["Сбои провайдеров", summary.provider_failures],
   ];
-  const root = document.getElementById("stats-grid");
   root.innerHTML = stats
     .map(
-      ([label, value]) =>
-        `<div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+      ([label, value]) => `
+        <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
           <p class="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">${label}</p>
           <p class="mt-3 text-3xl font-semibold text-white">${value}</p>
-        </div>`
+        </div>
+      `
     )
     .join("");
 }
 
-function renderRows(targetId, items, mapper) {
-  const root = document.getElementById(targetId);
-  root.innerHTML =
-    items.map(mapper).join("") ||
-    `<div class="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-5 text-sm text-slate-400">No data yet.</div>`;
-}
-
 function fillClamavForm(settings, path) {
-  const form = document.getElementById("clamav-form");
+  const form = byId("clamav-form");
+  if (!form) {
+    return;
+  }
   form.database_mirror.value = settings.database_mirror || "";
   form.private_mirror.value = settings.private_mirror || "";
   form.dns_database_info.value = settings.dns_database_info || "";
@@ -48,19 +73,28 @@ function fillClamavForm(settings, path) {
   form.script_updated.checked = !!settings.script_updated;
   form.compress_local_database.checked = !!settings.compress_local_database;
   form.notify_clamd.checked = !!settings.notify_clamd;
-  document.getElementById("clamav-config-path").textContent = `Generated config: ${path}`;
+  const summary = byId("clamav-config-path");
+  if (summary) {
+    summary.textContent = `Сгенерированный файл: ${path}`;
+  }
 }
 
 function fillAiRuntimeForm(settings) {
-  const form = document.getElementById("ai-runtime-form");
+  const form = byId("ai-runtime-form");
+  if (!form) {
+    return;
+  }
   form.provider_mode.value = settings.provider_mode || "disabled";
   form.ollama_base_url.value = settings.ollama_base_url || "";
   form.ollama_model.value = settings.ollama_model || "";
   form.gpustack_base_url.value = settings.gpustack_base_url || "";
   form.gpustack_model.value = settings.gpustack_model || "";
   form.gpustack_api_key.value = settings.gpustack_api_key || "";
-  document.getElementById("ai-runtime-summary").textContent =
-    `Active mode: ${settings.provider_mode}\nOllama model: ${settings.ollama_model}\nGPUStack model: ${settings.gpustack_model}`;
+  const summary = byId("ai-runtime-summary");
+  if (summary) {
+    summary.textContent =
+      `Активный режим: ${settings.provider_mode}\nМодель Ollama: ${settings.ollama_model}\nМодель GPUStack: ${settings.gpustack_model}`;
+  }
 }
 
 async function loadDashboard() {
@@ -68,10 +102,9 @@ async function loadDashboard() {
   renderStats(dashboard.summary);
 }
 
-async function loadSettings() {
+async function loadProviders() {
   const settings = await api("/settings");
-  fillAiRuntimeForm(settings.ai_runtime);
-  renderRows(
+  renderList(
     "providers-table",
     settings.providers,
     (provider) => `
@@ -81,8 +114,8 @@ async function loadSettings() {
           <span class="rounded-full border border-slate-700 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">${provider.kind}</span>
         </div>
         <div class="mt-3 grid gap-1 text-sm text-slate-400">
-          <span>enabled: ${provider.enabled}</span>
-          <span>base_url: ${provider.base_url || "-"}</span>
+          <span>Активен: ${provider.enabled ? "да" : "нет"}</span>
+          <span>URL: ${provider.base_url || "-"}</span>
         </div>
       </div>
     `
@@ -91,34 +124,41 @@ async function loadSettings() {
 
 async function loadMessages() {
   const messages = await api("/messages");
-  renderRows(
+  renderList(
     "messages-table",
     messages,
     (message) => `
       <button class="rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-left transition hover:border-emerald-400/50 hover:bg-slate-900" onclick="loadTrace(${message.id})">
-        <strong class="text-base text-white">#${message.id} ${message.subject || "(no subject)"}</strong>
+        <strong class="text-base text-white">#${message.id} ${message.subject || "(без темы)"}</strong>
         <div class="mt-2 grid gap-1 text-sm text-slate-400">
           <span>${message.mail_from} -> ${message.rcpt_to.join(", ")}</span>
-          <span>action: ${message.final_action} | score: ${message.spam_score.toFixed(2)}</span>
+          <span>Действие: ${message.final_action} | score: ${message.spam_score.toFixed(2)}</span>
         </div>
       </button>
-    `
+    `,
+    "Сообщения еще не обрабатывались."
   );
 }
 
 async function loadTrace(messageId) {
   const trace = await api(`/messages/${messageId}/trace`);
-  document.getElementById("message-trace").innerHTML = `
+  const root = byId("message-trace");
+  if (!root) {
+    return;
+  }
+  root.innerHTML = `
     <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-      <p class="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Decision chain</p>
+      <p class="mb-3 text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Цепочка принятия решения</p>
       <pre class="overflow-x-auto whitespace-pre-wrap text-sm text-slate-300">${JSON.stringify(trace, null, 2)}</pre>
     </div>
   `;
 }
 
+window.loadTrace = loadTrace;
+
 async function loadAudit() {
   const audit = await api("/audit");
-  renderRows(
+  renderList(
     "audit-table",
     audit,
     (event) => `
@@ -126,10 +166,11 @@ async function loadAudit() {
         <strong class="text-base text-white">${event.action}</strong>
         <div class="mt-2 grid gap-1 text-sm text-slate-400">
           <span>${event.user_email}</span>
-          <span>${new Date(event.created_at).toLocaleString()}</span>
+          <span>${new Date(event.created_at).toLocaleString("ru-RU")}</span>
         </div>
       </div>
-    `
+    `,
+    "Аудит-события пока не записаны."
   );
 }
 
@@ -180,14 +221,56 @@ async function saveAiRuntime(event) {
   fillAiRuntimeForm(data.settings);
 }
 
-async function bootstrap() {
-  document.getElementById("refresh-dashboard").addEventListener("click", loadDashboard);
-  document.getElementById("refresh-messages").addEventListener("click", loadMessages);
-  document.getElementById("clamav-form").addEventListener("submit", saveClamavMirrors);
-  document.getElementById("ai-runtime-form").addEventListener("submit", saveAiRuntime);
-  await Promise.all([loadDashboard(), loadSettings(), loadMessages(), loadAudit(), loadClamavMirrors(), loadAiRuntime()]);
+function showPageError(error) {
+  const candidates = [
+    "stats-grid",
+    "providers-table",
+    "messages-table",
+    "audit-table",
+    "clamav-config-path",
+    "ai-runtime-summary",
+  ];
+  const targetId = candidates.find((id) => byId(id));
+  const target = targetId ? byId(targetId) : null;
+  if (target) {
+    target.innerHTML = `<div class="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-100">Ошибка загрузки: ${error.message}</div>`;
+  }
 }
 
-bootstrap().catch((error) => {
-  document.getElementById("stats-grid").innerHTML = `<div class="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-100">Failed to load UI: ${error.message}</div>`;
-});
+async function bootstrap() {
+  setActiveNav();
+
+  const tasks = [];
+
+  if (byId("stats-grid")) {
+    byId("refresh-dashboard")?.addEventListener("click", loadDashboard);
+    tasks.push(loadDashboard());
+  }
+
+  if (byId("providers-table")) {
+    tasks.push(loadProviders());
+  }
+
+  if (byId("messages-table")) {
+    byId("refresh-messages")?.addEventListener("click", loadMessages);
+    tasks.push(loadMessages());
+  }
+
+  if (byId("audit-table")) {
+    tasks.push(loadAudit());
+  }
+
+  if (byId("clamav-form")) {
+    byId("clamav-form").addEventListener("submit", saveClamavMirrors);
+    tasks.push(loadClamavMirrors());
+  }
+
+  if (byId("ai-runtime-form")) {
+    byId("ai-runtime-form").addEventListener("submit", saveAiRuntime);
+    tasks.push(loadAiRuntime());
+  }
+
+  await Promise.all(tasks);
+}
+
+bootstrap().catch(showPageError);

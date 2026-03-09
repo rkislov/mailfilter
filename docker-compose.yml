@@ -1,5 +1,15 @@
+x-net-defaults: &net_defaults
+  dns:
+    - ${DNS_RESOLVER_1}
+    - ${DNS_RESOLVER_2}
+  dns_search:
+    - ${DNS_SEARCH_DOMAIN}
+  networks:
+    - anispam_net
+
 services:
   postgres:
+    <<: *net_defaults
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -15,6 +25,7 @@ services:
     restart: unless-stopped
 
   redis:
+    <<: *net_defaults
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -27,6 +38,7 @@ services:
     restart: unless-stopped
 
   clamav:
+    <<: *net_defaults
     image: clamav/clamav:latest
     volumes:
       - clamav_data:/var/lib/clamav
@@ -39,6 +51,7 @@ services:
     restart: unless-stopped
 
   policy-api:
+    <<: *net_defaults
     build:
       context: .
       dockerfile: services/policy-api/Dockerfile
@@ -63,6 +76,7 @@ services:
     restart: unless-stopped
 
   worker-scan:
+    <<: *net_defaults
     build:
       context: .
       dockerfile: services/worker-scan/Dockerfile
@@ -76,6 +90,7 @@ services:
     restart: unless-stopped
 
   milter-service:
+    <<: *net_defaults
     build:
       context: .
       dockerfile: services/milter-service/Dockerfile
@@ -94,6 +109,7 @@ services:
     restart: unless-stopped
 
   web-ui:
+    <<: *net_defaults
     build:
       context: .
       dockerfile: services/web-ui/Dockerfile
@@ -107,6 +123,7 @@ services:
     restart: unless-stopped
 
   ollama:
+    <<: *net_defaults
     image: ollama/ollama:latest
     profiles: ["ai"]
     volumes:
@@ -121,3 +138,10 @@ volumes:
   clamav_data:
   clamav_config:
   ollama_data:
+
+networks:
+  anispam_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${NETWORK_SUBNET}

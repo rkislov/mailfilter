@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AniSpam | Сеть и DNS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { theme: { extend: { boxShadow: { panel: "0 20px 60px rgba(2, 6, 23, 0.45)" } } } };
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <div class="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(52,211,153,0.18),_transparent_25%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#020617_100%)]">
+      <div class="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[18rem_1fr]">
+        <aside class="border-b border-slate-800/80 bg-slate-950/80 px-6 py-8 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+          <p class="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-300">AniSpam</p>
+          <h1 class="mt-3 text-3xl font-bold">Сеть и DNS</h1>
+          <p class="mt-3 text-sm text-slate-400">Окно с рекомендациями по установке в локальной сети, подсети Docker и DNS-резолверам.</p>
+          <nav class="mt-8 grid gap-2 text-sm">
+            <a data-nav href="/index.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Панель</a>
+            <a data-nav href="/clamav.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">ClamAV</a>
+            <a data-nav href="/ai-runtime.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">AI Runtime</a>
+            <a data-nav href="/providers.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Провайдеры</a>
+            <a data-nav href="/messages.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Сообщения</a>
+            <a data-nav href="/audit.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Аудит</a>
+            <a data-nav href="/network.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Сеть и DNS</a>
+          </nav>
+        </aside>
+        <main class="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+          <section class="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Установка в сети</p>
+            <h2 class="mt-2 text-2xl font-semibold text-white">Как правильно развернуть в LAN</h2>
+            <div class="mt-4 grid gap-4 text-sm text-slate-300">
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                Размещайте `milter-service` рядом с Postfix или на том же trusted-сегменте сети, чтобы SMTP-трафик до milter проходил без NAT и неожиданных firewall-ограничений.
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                Для Docker-сети используйте отдельную подсеть, которая не пересекается с вашей LAN, VPN и сетями виртуализации.
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                Для RBL, DKIM, anti-phishing и обновлений ClamAV контейнеры должны видеть рабочие рекурсивные DNS-серверы.
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Переменные окружения</p>
+            <h2 class="mt-2 text-2xl font-semibold text-white">DNS и подсеть</h2>
+            <pre class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">NETWORK_SUBNET=172.30.0.0/24
+DNS_RESOLVER_1=192.168.1.1
+DNS_RESOLVER_2=1.1.1.1
+DNS_SEARCH_DOMAIN=mail.local</pre>
+            <div class="mt-4 grid gap-3 text-sm text-slate-400">
+              <p>`DNS_RESOLVER_1` и `DNS_RESOLVER_2` лучше указывать как доступные recursive DNS-серверы.</p>
+              <p>Если корпоративный DNS не умеет рекурсию во внешние зоны, используйте локальный `Unbound` или `Bind` и укажите его адрес.</p>
+              <p>Для DKIM-проверки важно, чтобы контейнеры могли резолвить TXT-записи селекторов, а для RBL и anti-phishing нужны внешние DNS-запросы без блокировок.</p>
+            </div>
+          </section>
+
+          <section class="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Postfix</p>
+            <h2 class="mt-2 text-2xl font-semibold text-white">Подключение relay к AniSpam</h2>
+            <pre class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">smtpd_milters = inet:192.168.1.50:9900
+non_smtpd_milters = inet:192.168.1.50:9900
+milter_default_action = tempfail
+milter_protocol = 6</pre>
+            <p class="mt-4 text-sm text-slate-400">Вместо `192.168.1.50` используйте IP хоста, на котором опубликован порт `9900` контейнера `milter-service`.</p>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

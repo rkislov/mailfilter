@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AniSpam | AI Runtime</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { theme: { extend: { boxShadow: { panel: "0 20px 60px rgba(2, 6, 23, 0.45)" } } } };
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <div class="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(52,211,153,0.18),_transparent_25%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#020617_100%)]">
+      <div class="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[18rem_1fr]">
+        <aside class="border-b border-slate-800/80 bg-slate-950/80 px-6 py-8 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+          <p class="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-300">AniSpam</p>
+          <h1 class="mt-3 text-3xl font-bold">AI Runtime</h1>
+          <p class="mt-3 text-sm text-slate-400">Отдельное окно для выбора провайдера AI, URL, ключей и моделей.</p>
+          <nav class="mt-8 grid gap-2 text-sm">
+            <a data-nav href="/index.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Панель</a>
+            <a data-nav href="/clamav.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">ClamAV</a>
+            <a data-nav href="/ai-runtime.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">AI Runtime</a>
+            <a data-nav href="/providers.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Провайдеры</a>
+            <a data-nav href="/messages.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Сообщения</a>
+            <a data-nav href="/audit.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Аудит</a>
+            <a data-nav href="/network.html" class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900">Сеть и DNS</a>
+          </nav>
+        </aside>
+        <main class="px-4 py-6 sm:px-6 lg:px-8">
+          <section class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">AI-анализ</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">Параметры runtime</h2>
+              </div>
+              <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-cyan-200">Ollama / GPUStack</span>
+            </div>
+            <form id="ai-runtime-form" class="mt-6 grid gap-4 xl:grid-cols-2">
+              <label class="grid gap-2 text-sm text-slate-300 xl:col-span-2">
+                <span>Режим провайдера</span>
+                <select class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none focus:border-emerald-400" name="provider_mode">
+                  <option value="disabled">Выключено</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="gpustack">GPUStack</option>
+                </select>
+              </label>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 xl:col-span-2">
+                <p class="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">Параметры Ollama</p>
+                <div class="grid gap-4 xl:grid-cols-2">
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Base URL</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="ollama_base_url" />
+                  </label>
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Модель</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="ollama_model" />
+                  </label>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 xl:col-span-2">
+                <p class="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">Параметры GPUStack</p>
+                <div class="grid gap-4 xl:grid-cols-2">
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Base URL</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_base_url" />
+                  </label>
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Модель</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_model" />
+                  </label>
+                  <label class="grid gap-2 text-sm text-slate-300 xl:col-span-2">
+                    <span>API key</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_api_key" />
+                  </label>
+                </div>
+              </div>
+              <div class="xl:col-span-2 flex flex-wrap items-center gap-3">
+                <button type="submit" class="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Сохранить AI runtime</button>
+                <p class="text-sm text-slate-400">Для Ollama и GPUStack теперь можно указывать разные модели.</p>
+              </div>
+            </form>
+            <pre id="ai-runtime-summary" class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300"></pre>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
