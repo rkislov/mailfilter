@@ -28,6 +28,7 @@ class MessageEvaluationRequest(BaseModel):
     subject: str | None = None
     headers: dict[str, str] = Field(default_factory=dict)
     body_text: str = ""
+    raw_message_base64: str | None = None
     attachments: list[AttachmentPayload] = Field(default_factory=list)
     urls: list[str] = Field(default_factory=list)
 

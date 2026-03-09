@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import AuditEvent, Domain, MessageEvent, Organization, Policy, Provider, ScanJob, User, Verdict
-from app.providers import AIGateway, ClamAVAdapter, DrWebAdapter, KasperskyAdapter, ThreatIntelAdapter, keyword_signals
+from app.providers import AIGateway, ClamAVAdapter, DKIMAdapter, DrWebAdapter, KasperskyAdapter, ThreatIntelAdapter, keyword_signals
 from shared.clients.redis_queue import RedisQueue
 from shared.contracts.message import DashboardSummary, MessageEvaluationRequest, MessageEvaluationResponse, SignalRecord
-from shared.contracts.providers import ClamAVMirrorSettings
+from shared.contracts.providers import AIRuntimeSettings, ClamAVMirrorSettings
 
 
 def seed_defaults(db: Session) -> None:
@@ -58,9 +58,18 @@ def seed_defaults(db: Session) -> None:
                     organization_id=organization.id,
                     name="ollama",
                     kind="ai",
-                    enabled=False,
-                    base_url=settings.ai_openai_base_url,
-                    settings_json=json.dumps({"model": settings.ai_model}),
+                    enabled=settings.ai_provider_mode == "ollama",
+                    base_url=settings.ollama_base_url,
+                    settings_json=json.dumps({"model": settings.ollama_model}),
+                ),
+                Provider(
+                    organization_id=organization.id,
+                    name="gpustack",
+                    kind="ai",
+                    enabled=settings.ai_provider_mode == "gpustack",
+                    base_url=settings.gpustack_base_url,
+                    api_key=settings.gpustack_api_key or None,
+                    settings_json=json.dumps({"model": settings.gpustack_model}),
                 ),
                 User(
                     organization_id=organization.id,
@@ -71,6 +80,7 @@ def seed_defaults(db: Session) -> None:
             ]
         )
         db.commit()
+    ensure_ai_runtime_provider(db)
     ensure_clamav_config(ClamAVMirrorSettings())
 
 
@@ -98,6 +108,52 @@ def get_clamav_settings(db: Session) -> ClamAVMirrorSettings:
     if provider is None:
         return ClamAVMirrorSettings()
     return ClamAVMirrorSettings(**json.loads(provider.settings_json))
+
+
+def ensure_ai_runtime_provider(db: Session) -> None:
+    provider = db.scalar(select(Provider).where(Provider.name == "ai-runtime"))
+    if provider is None:
+        provider = Provider(
+            name="ai-runtime",
+            kind="ai",
+            enabled=settings.ai_provider_mode != "disabled",
+            settings_json=json.dumps(_default_ai_runtime().model_dump()),
+        )
+        db.add(provider)
+        db.commit()
+
+
+def get_ai_runtime_settings(db: Session) -> AIRuntimeSettings:
+    provider = db.scalar(select(Provider).where(Provider.name == "ai-runtime"))
+    if provider is None:
+        payload = _default_ai_runtime()
+        save_ai_runtime_settings(db, payload)
+        return payload
+    return AIRuntimeSettings(**json.loads(provider.settings_json))
+
+
+def save_ai_runtime_settings(db: Session, payload: AIRuntimeSettings, user_email: str = "system@anispam.local") -> None:
+    provider = db.scalar(select(Provider).where(Provider.name == "ai-runtime"))
+    if provider is None:
+        provider = Provider(name="ai-runtime", kind="ai", enabled=payload.provider_mode != "disabled")
+        db.add(provider)
+        db.flush()
+    provider.enabled = payload.provider_mode != "disabled"
+    provider.base_url = payload.gpustack_base_url if payload.provider_mode == "gpustack" else payload.ollama_base_url
+    provider.api_key = payload.gpustack_api_key if payload.provider_mode == "gpustack" else None
+    provider.settings_json = json.dumps(payload.model_dump())
+    provider.updated_at = datetime.utcnow()
+    db.add(
+        AuditEvent(
+            organization_id=provider.organization_id,
+            user_email=user_email,
+            action="update_ai_runtime",
+            target_kind="provider",
+            target_id=str(provider.id or "ai-runtime"),
+            details_json=provider.settings_json,
+        )
+    )
+    db.commit()
 
 
 def save_clamav_settings(db: Session, payload: ClamAVMirrorSettings, user_email: str = "system@anispam.local") -> str:
@@ -162,6 +218,12 @@ async def evaluate_message(db: Session, request: MessageEvaluationRequest) -> Me
         reasons.append(signal.summary)
         signal_records.append(_to_signal_record(signal))
 
+    dkim_signal = DKIMAdapter().verify(request.raw_message_base64, request.headers)
+    if dkim_signal.metadata.get("status") == "fail":
+        score += dkim_signal.score
+        reasons.append(dkim_signal.summary)
+    signal_records.append(_to_signal_record(dkim_signal))
+
     threat_intel = ThreatIntelAdapter()
     if policy.enable_rbl:
         rbl_providers = db.scalars(select(Provider).where(Provider.kind == "rbl", Provider.enabled.is_(True))).all()
@@ -211,9 +273,9 @@ async def evaluate_message(db: Session, request: MessageEvaluationRequest) -> Me
                 )
             )
 
-    ai_provider = db.scalar(select(Provider).where(Provider.kind == "ai", Provider.enabled.is_(True)).order_by(Provider.id.asc()))
-    if policy.enable_ai and ai_provider is not None:
-        ai_result = await AIGateway().score_message(request.subject, request.body_text)
+    ai_runtime = get_ai_runtime_settings(db)
+    if policy.enable_ai and ai_runtime.provider_mode != "disabled":
+        ai_result = await AIGateway(ai_runtime).score_message(request.subject, request.body_text)
         if ai_result is not None:
             score += ai_result.score * 0.2
             reasons.append(f"AI hint: {ai_result.verdict_hint}")
@@ -228,7 +290,10 @@ async def evaluate_message(db: Session, request: MessageEvaluationRequest) -> Me
             )
 
     action = "accept"
-    headers_to_add = {"X-AniSpam-Score": f"{score:.2f}"}
+    headers_to_add = {
+        "X-AniSpam-Score": f"{score:.2f}",
+        "X-AniSpam-DKIM": str(dkim_signal.metadata.get("status", "unknown")),
+    }
     if score >= policy.spam_reject_threshold:
         action = "reject"
         headers_to_add["X-AniSpam-Verdict"] = "reject"
@@ -312,10 +377,14 @@ def _provider_settings(provider: Provider) -> dict[str, Any]:
 
 
 def _to_signal_record(signal: Any) -> SignalRecord:
+    if signal.kind == "auth":
+        severity = "medium" if signal.metadata.get("status") == "fail" else "info"
+    else:
+        severity = "high" if signal.matched and signal.score >= 35 else "info"
     return SignalRecord(
         provider=signal.provider_name,
         category=signal.kind,
-        severity="high" if signal.matched and signal.score >= 35 else "info",
+        severity=severity,
         summary=signal.summary,
         details=signal.metadata,
     )
@@ -325,3 +394,14 @@ def _redis(_: Session):
     from app.db import redis_client
 
     return redis_client
+
+
+def _default_ai_runtime() -> AIRuntimeSettings:
+    return AIRuntimeSettings(
+        provider_mode=settings.ai_provider_mode if settings.ai_provider_mode in {"disabled", "ollama", "gpustack"} else "disabled",
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        gpustack_base_url=settings.gpustack_base_url,
+        gpustack_api_key=settings.gpustack_api_key or None,
+        gpustack_model=settings.gpustack_model,
+    )

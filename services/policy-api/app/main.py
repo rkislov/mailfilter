@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.db import Base, SessionLocal, engine, get_db, redis_client
 from app.models import AuditEvent, Domain, MessageEvent, Organization, Policy, Provider, ScanJob, Verdict
 from app.schemas import (
+    AIRuntimeSettingsResponse,
+    AIRuntimeSettingsUpdate,
     AuditEventRead,
     ClamAVMirrorSettingsResponse,
     ClamAVMirrorSettingsUpdate,
@@ -30,8 +32,16 @@ from app.schemas import (
     SettingsBundle,
     VerdictRead,
 )
-from app.service import dashboard_summary, evaluate_message, get_clamav_settings, save_clamav_settings, seed_defaults
-from shared.contracts.providers import ClamAVMirrorSettings
+from app.service import (
+    dashboard_summary,
+    evaluate_message,
+    get_ai_runtime_settings,
+    get_clamav_settings,
+    save_ai_runtime_settings,
+    save_clamav_settings,
+    seed_defaults,
+)
+from shared.contracts.providers import AIRuntimeSettings, ClamAVMirrorSettings
 
 app = FastAPI(title="AniSpam Policy API", version="0.1.0")
 
@@ -67,6 +77,7 @@ def get_settings(db: Session = Depends(get_db)) -> SettingsBundle:
         providers=[_provider_read(item) for item in db.scalars(select(Provider)).all()],
         policies=[PolicyRead.model_validate(item) for item in db.scalars(select(Policy)).all()],
         clamav_mirrors=get_clamav_settings(db),
+        ai_runtime=get_ai_runtime_settings(db),
     )
 
 
@@ -164,6 +175,18 @@ def update_clamav_mirrors(payload: ClamAVMirrorSettingsUpdate, db: Session = Dep
     settings_payload = ClamAVMirrorSettings(**payload.model_dump())
     config_path = save_clamav_settings(db, settings_payload, user_email="admin@web-ui.local")
     return ClamAVMirrorSettingsResponse(settings=settings_payload, config_path=config_path)
+
+
+@app.get("/api/v1/providers/ai/runtime", response_model=AIRuntimeSettingsResponse)
+def read_ai_runtime(db: Session = Depends(get_db)) -> AIRuntimeSettingsResponse:
+    return AIRuntimeSettingsResponse(settings=get_ai_runtime_settings(db))
+
+
+@app.put("/api/v1/providers/ai/runtime", response_model=AIRuntimeSettingsResponse)
+def update_ai_runtime(payload: AIRuntimeSettingsUpdate, db: Session = Depends(get_db)) -> AIRuntimeSettingsResponse:
+    settings_payload = AIRuntimeSettings(**payload.model_dump())
+    save_ai_runtime_settings(db, settings_payload, user_email="admin@web-ui.local")
+    return AIRuntimeSettingsResponse(settings=settings_payload)
 
 
 def _provider_read(item: Provider) -> ProviderRead:

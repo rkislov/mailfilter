@@ -51,6 +51,18 @@ function fillClamavForm(settings, path) {
   document.getElementById("clamav-config-path").textContent = `Generated config: ${path}`;
 }
 
+function fillAiRuntimeForm(settings) {
+  const form = document.getElementById("ai-runtime-form");
+  form.provider_mode.value = settings.provider_mode || "disabled";
+  form.ollama_base_url.value = settings.ollama_base_url || "";
+  form.ollama_model.value = settings.ollama_model || "";
+  form.gpustack_base_url.value = settings.gpustack_base_url || "";
+  form.gpustack_model.value = settings.gpustack_model || "";
+  form.gpustack_api_key.value = settings.gpustack_api_key || "";
+  document.getElementById("ai-runtime-summary").textContent =
+    `Active mode: ${settings.provider_mode}\nOllama model: ${settings.ollama_model}\nGPUStack model: ${settings.gpustack_model}`;
+}
+
 async function loadDashboard() {
   const dashboard = await api("/dashboard");
   renderStats(dashboard.summary);
@@ -58,6 +70,7 @@ async function loadDashboard() {
 
 async function loadSettings() {
   const settings = await api("/settings");
+  fillAiRuntimeForm(settings.ai_runtime);
   renderRows(
     "providers-table",
     settings.providers,
@@ -125,6 +138,11 @@ async function loadClamavMirrors() {
   fillClamavForm(data.settings, data.config_path);
 }
 
+async function loadAiRuntime() {
+  const data = await api("/providers/ai/runtime");
+  fillAiRuntimeForm(data.settings);
+}
+
 async function saveClamavMirrors(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -144,11 +162,30 @@ async function saveClamavMirrors(event) {
   fillClamavForm(data.settings, data.config_path);
 }
 
+async function saveAiRuntime(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = {
+    provider_mode: form.provider_mode.value,
+    ollama_base_url: form.ollama_base_url.value,
+    ollama_model: form.ollama_model.value,
+    gpustack_base_url: form.gpustack_base_url.value,
+    gpustack_model: form.gpustack_model.value,
+    gpustack_api_key: form.gpustack_api_key.value || null,
+  };
+  const data = await api("/providers/ai/runtime", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  fillAiRuntimeForm(data.settings);
+}
+
 async function bootstrap() {
   document.getElementById("refresh-dashboard").addEventListener("click", loadDashboard);
   document.getElementById("refresh-messages").addEventListener("click", loadMessages);
   document.getElementById("clamav-form").addEventListener("submit", saveClamavMirrors);
-  await Promise.all([loadDashboard(), loadSettings(), loadMessages(), loadAudit(), loadClamavMirrors()]);
+  document.getElementById("ai-runtime-form").addEventListener("submit", saveAiRuntime);
+  await Promise.all([loadDashboard(), loadSettings(), loadMessages(), loadAudit(), loadClamavMirrors(), loadAiRuntime()]);
 }
 
 bootstrap().catch((error) => {

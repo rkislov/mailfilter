@@ -64,6 +64,7 @@ The repository also includes a ready-made Postfix sample in `infra/examples/post
 - Tenant-aware configuration model for organizations and domains.
 - SMTP-time policy evaluation endpoint for milter integration.
 - ClamAV adapter plus stubs for Dr.Web and Kaspersky Scan Engine.
+- DKIM signature verification with `pass/fail/none` decision logging.
 - ClamAV mirror configuration through API and web UI, with shared `freshclam.conf` generation.
 - DNSBL/RBL and anti-phishing feed checks with caching hooks.
 - AI scoring gateway for Ollama or GPUStack via OpenAI-compatible APIs.

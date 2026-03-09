@@ -43,6 +43,7 @@
           <nav class="mt-8 grid gap-2 text-sm text-slate-300">
             <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#dashboard">Dashboard</a>
             <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#clamav">ClamAV Updates</a>
+            <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#ai-runtime">AI Runtime</a>
             <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#providers">Providers</a>
             <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#messages">Message Trace</a>
             <a class="rounded-xl border border-transparent px-4 py-3 transition hover:border-slate-700 hover:bg-slate-900" href="#audit">Audit Log</a>
@@ -103,6 +104,61 @@
               </div>
             </form>
             <pre id="clamav-config-path" class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300"></pre>
+          </section>
+
+          <section id="ai-runtime" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">AI scoring</p>
+                <h2 class="mt-2 text-2xl font-semibold text-white">AI runtime settings</h2>
+              </div>
+              <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-cyan-200">Ollama / GPUStack</span>
+            </div>
+            <form id="ai-runtime-form" class="mt-6 grid gap-4 xl:grid-cols-2">
+              <label class="grid gap-2 text-sm text-slate-300 xl:col-span-2">
+                <span>Provider mode</span>
+                <select class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none focus:border-emerald-400" name="provider_mode">
+                  <option value="disabled">Disabled</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="gpustack">GPUStack</option>
+                </select>
+              </label>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 xl:col-span-2">
+                <p class="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">Ollama</p>
+                <div class="grid gap-4 xl:grid-cols-2">
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Base URL</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="ollama_base_url" />
+                  </label>
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Model</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="ollama_model" />
+                  </label>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 xl:col-span-2">
+                <p class="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">GPUStack</p>
+                <div class="grid gap-4 xl:grid-cols-2">
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Base URL</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_base_url" />
+                  </label>
+                  <label class="grid gap-2 text-sm text-slate-300">
+                    <span>Model</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_model" />
+                  </label>
+                  <label class="grid gap-2 text-sm text-slate-300 xl:col-span-2">
+                    <span>API key</span>
+                    <input class="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-emerald-400" name="gpustack_api_key" />
+                  </label>
+                </div>
+              </div>
+              <div class="xl:col-span-2 flex flex-wrap items-center gap-3">
+                <button type="submit" class="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Save AI runtime</button>
+                <p class="text-sm text-slate-400">Use separate model names for local Ollama and remote GPUStack runtimes.</p>
+              </div>
+            </form>
+            <pre id="ai-runtime-summary" class="mt-6 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300"></pre>
           </section>
 
           <section id="providers" class="overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/70 p-6 shadow-panel backdrop-blur">

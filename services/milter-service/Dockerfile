@@ -7,7 +7,7 @@ ENV PYTHONPATH=/app
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libmilter-dev \
+    && apt-get install -y --no-install-recommends build-essential libmilter-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY services/milter-service/requirements.txt /tmp/requirements.txt

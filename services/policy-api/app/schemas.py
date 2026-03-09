@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from shared.contracts.message import DashboardSummary, MessageEvaluationRequest, MessageEvaluationResponse
-from shared.contracts.providers import ClamAVMirrorSettings
+from shared.contracts.providers import AIRuntimeSettings, ClamAVMirrorSettings
 
 
 class HealthResponse(BaseModel):
@@ -144,6 +144,7 @@ class SettingsBundle(BaseModel):
     providers: list[ProviderRead]
     policies: list[PolicyRead]
     clamav_mirrors: ClamAVMirrorSettings
+    ai_runtime: AIRuntimeSettings
 
 
 class ClamAVMirrorSettingsResponse(BaseModel):
@@ -159,6 +160,19 @@ class ClamAVMirrorSettingsUpdate(BaseModel):
     compress_local_database: bool = False
     dns_database_info: str | None = None
     notify_clamd: bool = True
+
+
+class AIRuntimeSettingsResponse(BaseModel):
+    settings: AIRuntimeSettings
+
+
+class AIRuntimeSettingsUpdate(BaseModel):
+    provider_mode: str = "disabled"
+    ollama_base_url: str = "http://ollama:11434/v1"
+    ollama_model: str = "llama3.1"
+    gpustack_base_url: str = "http://gpustack:8080/v1"
+    gpustack_api_key: str | None = None
+    gpustack_model: str = "llama3.1"
 
 
 EvaluateRequest = MessageEvaluationRequest

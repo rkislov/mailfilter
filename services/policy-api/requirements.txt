@@ -8,3 +8,4 @@ redis==6.4.0
 httpx==0.28.1
 dnspython==2.7.0
 clamd==1.0.2
+dkimpy==1.1.8

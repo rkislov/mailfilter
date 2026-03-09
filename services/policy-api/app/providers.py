@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import base64
+import re
 import socket
 import time
 from urllib.parse import urlparse
 
 import clamd
+import dkim
 import dns.resolver
 
 from app.config import settings
 from shared.clients.ai_client import OpenAICompatibleClient
 from shared.contracts.message import AttachmentPayload
-from shared.contracts.providers import AIAnalysisResult, AntivirusResult, ProviderSignal
+from shared.contracts.providers import AIAnalysisResult, AIRuntimeSettings, AntivirusResult, ProviderSignal
 
 
 SPAM_KEYWORDS = {
@@ -130,15 +132,67 @@ class ThreatIntelAdapter:
         return signals
 
 
+class DKIMAdapter:
+    name = "dkim"
+
+    def verify(self, raw_message_base64: str | None, headers: dict[str, str]) -> ProviderSignal:
+        signature = headers.get("DKIM-Signature")
+        if not signature:
+            return ProviderSignal(
+                provider_name=self.name,
+                kind="auth",
+                matched=False,
+                summary="No DKIM signature present",
+                metadata={"status": "none"},
+            )
+        if not raw_message_base64:
+            return ProviderSignal(
+                provider_name=self.name,
+                kind="auth",
+                matched=False,
+                summary="DKIM signature present but raw message is unavailable",
+                metadata={"status": "unverified"},
+            )
+        domain = _extract_dkim_domain(signature)
+        try:
+            verified = dkim.verify(base64.b64decode(raw_message_base64))
+            return ProviderSignal(
+                provider_name=self.name,
+                kind="auth",
+                matched=not verified,
+                summary="DKIM verification passed" if verified else "DKIM verification failed",
+                score=20 if not verified else 0,
+                metadata={"status": "pass" if verified else "fail", "domain": domain},
+            )
+        except Exception as exc:
+            return ProviderSignal(
+                provider_name=self.name,
+                kind="auth",
+                matched=False,
+                summary="DKIM verification error",
+                metadata={"status": "error", "domain": domain, "error": str(exc)},
+            )
+
+
 class AIGateway:
-    def __init__(self) -> None:
+    def __init__(self, runtime: AIRuntimeSettings) -> None:
+        self.runtime = runtime
+        self.provider_name = runtime.provider_mode
+        if runtime.provider_mode == "gpustack":
+            base_url = runtime.gpustack_base_url
+            api_key = runtime.gpustack_api_key or ""
+            self.model = runtime.gpustack_model
+        else:
+            base_url = runtime.ollama_base_url
+            api_key = "ollama"
+            self.model = runtime.ollama_model
         self.client = OpenAICompatibleClient(
-            base_url=settings.ai_openai_base_url,
-            api_key=settings.ai_openai_api_key,
+            base_url=base_url,
+            api_key=api_key,
         )
 
     async def score_message(self, subject: str | None, body_text: str) -> AIAnalysisResult | None:
-        if settings.ai_provider_mode == "disabled":
+        if self.runtime.provider_mode == "disabled":
             return None
         prompt = (
             "Classify the email as spam, suspicious, ham, or unknown. "
@@ -146,7 +200,7 @@ class AIGateway:
         )
         try:
             response = await self.client.chat_completion(
-                model=settings.ai_model,
+                model=self.model,
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": f"Subject: {subject or ''}\n\nBody:\n{body_text[:4000]}"},
@@ -154,16 +208,16 @@ class AIGateway:
             )
             content = response["choices"][0]["message"]["content"]
             return AIAnalysisResult(
-                provider_name="ai-gateway",
-                model=settings.ai_model,
+                provider_name=self.provider_name,
+                model=self.model,
                 score=_extract_score(content),
                 verdict_hint=_extract_hint(content),
                 explanation=content[:1000],
             )
         except Exception as exc:
             return AIAnalysisResult(
-                provider_name="ai-gateway",
-                model=settings.ai_model,
+                provider_name=self.provider_name,
+                model=self.model,
                 score=0,
                 verdict_hint="unknown",
                 explanation=f"AI analysis unavailable: {exc}",
@@ -207,3 +261,10 @@ def _extract_hint(content: str) -> str:
     if "ham" in lowered:
         return "ham"
     return "unknown"
+
+
+def _extract_dkim_domain(signature: str) -> str | None:
+    match = re.search(r"\bd=([^; ]+)", signature)
+    if match:
+        return match.group(1)
+    return None

@@ -11,9 +11,11 @@ class Settings(BaseSettings):
     clamav_host: str = "clamav"
     clamav_port: int = 3310
     ai_provider_mode: str = "disabled"
-    ai_openai_base_url: str = "http://ollama:11434/v1"
-    ai_openai_api_key: str = "ollama"
-    ai_model: str = "llama3.1"
+    ollama_base_url: str = "http://ollama:11434/v1"
+    ollama_model: str = "llama3.1"
+    gpustack_base_url: str = "http://gpustack:8080/v1"
+    gpustack_api_key: str = ""
+    gpustack_model: str = "llama3.1"
     enable_ai_enforcement: bool = False
     smtp_decision_timeout_ms: int = 1500
     scan_queue_name: str = "anispam:scan-jobs"

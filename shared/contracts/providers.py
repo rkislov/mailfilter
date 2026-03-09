@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-ProviderKind = Literal["av", "rbl", "anti_phishing", "ai"]
+ProviderKind = Literal["av", "rbl", "anti_phishing", "ai", "auth"]
 ProviderStatus = Literal["enabled", "disabled", "degraded"]
 
 
@@ -55,3 +55,16 @@ class ClamAVMirrorSettings(BaseModel):
     compress_local_database: bool = False
     dns_database_info: str | None = None
     notify_clamd: bool = True
+
+
+class AIProviderMode(BaseModel):
+    value: Literal["disabled", "ollama", "gpustack"] = "disabled"
+
+
+class AIRuntimeSettings(BaseModel):
+    provider_mode: Literal["disabled", "ollama", "gpustack"] = "disabled"
+    ollama_base_url: str = "http://ollama:11434/v1"
+    ollama_model: str = "llama3.1"
+    gpustack_base_url: str = "http://gpustack:8080/v1"
+    gpustack_api_key: str | None = None
+    gpustack_model: str = "llama3.1"

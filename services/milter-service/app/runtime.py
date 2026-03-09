@@ -34,6 +34,7 @@ class AniSpamMilter(BaseMilter):  # type: ignore[misc]
         self.mail_from = ""
         self.rcpt_to: list[str] = []
         self.headers: dict[str, str] = {}
+        self.header_lines: list[bytes] = []
         self.body_chunks: list[bytes] = []
         self.queue_id = None
         self.policy_client = PolicyClient()
@@ -56,6 +57,7 @@ class AniSpamMilter(BaseMilter):  # type: ignore[misc]
 
     def header(self, name, value):
         self.headers[name] = value
+        self.header_lines.append(f"{name}: {value}\r\n".encode("utf-8", errors="ignore"))
         return Milter.CONTINUE
 
     def body(self, chunk):
@@ -82,7 +84,8 @@ class AniSpamMilter(BaseMilter):  # type: ignore[misc]
 
     def _payload(self) -> dict:
         raw_body = b"".join(self.body_chunks)
-        message = BytesParser(policy=default).parsebytes(raw_body) if raw_body else None
+        raw_message = b"".join(self.header_lines) + b"\r\n" + raw_body
+        message = BytesParser(policy=default).parsebytes(raw_message) if raw_message else None
         attachments = []
         if message is not None:
             for part in message.iter_attachments():
@@ -106,6 +109,7 @@ class AniSpamMilter(BaseMilter):  # type: ignore[misc]
             "subject": self.headers.get("Subject"),
             "headers": self.headers,
             "body_text": raw_body.decode("utf-8", errors="ignore"),
+            "raw_message_base64": base64.b64encode(raw_message).decode("ascii"),
             "attachments": attachments,
             "urls": [],
         }
